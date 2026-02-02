@@ -20,7 +20,7 @@ import gatac as ga
 
 # Paths
 base_dir = Path(__file__).parent.parent
-r_output_dir = base_dir / "chromvar_r_output"
+r_output_dir = base_dir / "data/chromvar_r_output"
 meme_path = r_output_dir / "test_motifs.meme"
 genome_path = base_dir / "data/hg19.fa.gz"
 

@@ -17,7 +17,7 @@ set.seed(42)
 register(SerialParam())
 
 # Output directory for results
-output_dir <- "chromvar_r_output"
+output_dir <- "data/chromvar_r_output"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 cat("=== chromVAR R Implementation Comparison ===\n\n")
@@ -123,14 +123,29 @@ cat(sprintf("   Loaded %d motifs from JASPAR\n", length(motifs)))
 motifs <- motifs[1:10]
 cat(sprintf("   Using %d motifs for testing\n", length(motifs)))
 
-# Export motif names
+# Export motif names and PWMs
 motif_names <- names(motifs)
 write.csv(data.frame(motif_name = motif_names), 
           file.path(output_dir, "motif_names.csv"),
           row.names = FALSE,
           quote = FALSE)
-cat(sprintf("   Exported motif names to %s\n", 
-            file.path(output_dir, "motif_names.csv")))
+
+# Export PWMs as a single CSV (motif, row, A, C, G, T)
+pwms_list <- lapply(seq_along(motifs), function(i) {
+  m <- motifs[[i]]
+  # TFBSTools matrices can be converted to matrix
+  mat <- as.matrix(m)
+  df <- as.data.frame(t(mat))
+  colnames(df) <- c("A", "C", "G", "T")
+  df$motif <- names(motifs)[i]
+  df$pos <- 1:nrow(df)
+  return(df)
+})
+pwms_df <- do.call(rbind, pwms_list)
+write.csv(pwms_df, file.path(output_dir, "motifs_pwm.csv"), row.names = FALSE, quote = FALSE)
+
+cat(sprintf("   Exported motif names and PWMs to %s\n", 
+            file.path(output_dir, "motifs_pwm.csv")))
 
 # ============================================================================
 # 6. Match Motifs to Peaks

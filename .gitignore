@@ -8,3 +8,4 @@
 *.gz
 pixi.lock
 *.bed
+data/

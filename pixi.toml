@@ -10,6 +10,7 @@ test-r = "Rscript test/chromvar_comparison_R.R"
 
 [dependencies]
 python = "<3.14"
+pip = "*"
 r-base = "*"
 "bioconductor-bsgenome.hsapiens.ucsc.hg19" = "*"
 bioconductor-jaspar2016 = "*"
@@ -22,3 +23,5 @@ snapatac2 = { git = "https://github.com/scverse/SnapATAC2" }
 jupyterlab = ">=4.5.3, <5"
 ipywidgets = ">=8.1.8, <9"
 intervaltree = "*"
+MOODS-python = "*"
+biopython = ">=1.73"
