@@ -50,6 +50,10 @@ if __name__ == '__main__':
     end_gatac = time.time()
     gatac_time = end_gatac - start_gatac
 
+    # Save GATAC peaks to BED file for later use
+    gatac_df.to_csv("data/gatac_peaks.bed", sep='\t', header=False, index=False)
+    print(f"Saved {len(gatac_df):,} GATAC peaks to data/gatac_peaks.bed")
+
     # Calculate overlap metrics
     def calculate_overlap_intervals(peaks1, peaks2):
         trees1 = {}
