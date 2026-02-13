@@ -9,3 +9,5 @@
 pixi.lock
 *.bed
 data/
+analysis/nsys_reports/
+*.pyc

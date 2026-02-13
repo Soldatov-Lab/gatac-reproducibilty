@@ -8,6 +8,10 @@ version = "0.1.0"
 [tasks]
 test-r = "Rscript test/chromvar_comparison_R.R"
 
+[tasks.trace-gpu]
+args = ["filename"]
+cmd  = "python analysis/gpu_line_tracer.py {{filename}} --skip-snapatac2"
+
 [dependencies]
 python = "<3.14"
 pip = "*"
@@ -25,3 +29,4 @@ ipywidgets = ">=8.1.8, <9"
 intervaltree = "*"
 MOODS-python = "*"
 biopython = ">=1.73"
+pytest = ">=9.0.2, <10"
