@@ -10,6 +10,7 @@ pixi run python test/feature_selection.py
 pixi run python test/peak_calling.py
 pixi run python test/make_peak_matrix.py
 pixi run python test/motif_enrichment.py
+pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_full_comparison.py
 ```
 
@@ -24,5 +25,6 @@ pixi run python test/chromvar_full_comparison.py
 | Peak Calling | x4.1 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); Recall snap=97.3%, Recall gatac=98.9% |
 | Peak Matrix | x4.8 | ✅ Full Match | Shape match, Peak/Cell correlation=1.0 |
 | Motif Enrichment | x7.5 | ⚠️ Avg Corr: 0.984 | Minor numerical differences in p-value calculation |
+| GSEA | x4.3 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
 
 
