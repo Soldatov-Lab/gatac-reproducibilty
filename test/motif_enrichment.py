@@ -16,11 +16,11 @@ from gatac.tl.motif import DNAMotif, read_motifs
 from scipy.stats import pearsonr
 
 
-def test_motif_enrichment(skip_snapatac2=False):
+def test_motif_enrichment(run_gatac_only=False):
     """Test GATAC motif enrichment against SnapATAC2.
 
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 motif enrichment and comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) motif enrichment and comparison
     """
     # Load data
     print("Loading annotated PBMC 5k dataset...")
@@ -91,13 +91,13 @@ def test_motif_enrichment(skip_snapatac2=False):
     meme_path = register_datasets().fetch('cisBP_human.meme')
 
     # Load for SnapATAC2 (uses built-in function)
-    if not skip_snapatac2:
+    if not run_gatac_only:
         snap_motifs = snap.datasets.cis_bp(unique=True)
 
     # Load for GATAC (use read_motifs from the same file)
     gatac_motifs = read_motifs(meme_path, unique=True)
 
-    if not skip_snapatac2:
+    if not run_gatac_only:
         print(f"Loaded {len(snap_motifs)} SnapATAC2 motifs, {len(gatac_motifs)} GATAC motifs")
     else:
         print(f"Loaded {len(gatac_motifs)} GATAC motifs")
@@ -110,7 +110,7 @@ def test_motif_enrichment(skip_snapatac2=False):
     snap_time = None
     snap_results = None
 
-    if not skip_snapatac2:
+    if not run_gatac_only:
         print("\nRunning SnapATAC2 motif enrichment...")
         start_snap = time.time()
         snap_results = snap.tl.motif_enrichment(snap_motifs, markers, genome_fasta)
@@ -125,7 +125,7 @@ def test_motif_enrichment(skip_snapatac2=False):
     gatac_time = end_gatac - start_gatac
 
     # Compare results (only if not skipping SnapATAC2)
-    if not skip_snapatac2:
+    if not run_gatac_only:
         print("\nComparing results...")
         correlations = {}
         for cell_type in markers.keys():
@@ -186,10 +186,10 @@ def test_motif_enrichment(skip_snapatac2=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Test GATAC motif enrichment")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 motif enrichment and comparison"
+        help="Run GATAC only, skip SnapATAC2 motif enrichment and comparison"
     )
     args = parser.parse_args()
 
-    test_motif_enrichment(skip_snapatac2=args.skip_snapatac2)
+    test_motif_enrichment(run_gatac_only=args.run_gatac_only)

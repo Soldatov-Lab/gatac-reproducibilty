@@ -10,11 +10,11 @@ import gatac as ga
 import pandas as pd
 
 
-def test_tss_enrichment(skip_snapatac2=False):
+def test_tss_enrichment(run_gatac_only=False):
     """Test GATAC TSS enrichment against SnapATAC2.
     
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) comparison
     """
     # Load data
     print("Loading data...")
@@ -23,7 +23,7 @@ def test_tss_enrichment(skip_snapatac2=False):
     # SnapATAC2 TSSe (optional)
     snap_time = None
     df_snap = None
-    if not skip_snapatac2:
+    if not run_gatac_only:
         start_snap = time.time()
         snap.metrics.tsse(data, snap.genome.hg38)
         end_snap = time.time()
@@ -44,7 +44,7 @@ def test_tss_enrichment(skip_snapatac2=False):
 
     df_gatac = metrics.set_index("barcode").to_pandas()
 
-    if not skip_snapatac2:
+    if not run_gatac_only:
         correlation = pd.concat([df_gatac.tsse_score, df_snap.tsse], axis=1).corr().iloc[0, 1]
 
         cell_idx = snap.pp.filter_cells(data, min_counts=5000, min_tsse=10, max_counts=100000, inplace=False)
@@ -85,11 +85,11 @@ def test_tss_enrichment(skip_snapatac2=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test GATAC TSS enrichment")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 comparison"
+        help="Run GATAC only, skip SnapATAC2 comparison"
     )
     args = parser.parse_args()
     
-    test_tss_enrichment(skip_snapatac2=args.skip_snapatac2)
+    test_tss_enrichment(run_gatac_only=args.run_gatac_only)
 

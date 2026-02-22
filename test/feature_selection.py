@@ -18,11 +18,11 @@ import snapatac2 as snap
 import gatac as ga
 
 
-def test_feature_selection(skip_snapatac2=False):
+def test_feature_selection(run_gatac_only=False):
     """Test GATAC feature selection against SnapATAC2.
 
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 feature selection and comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) feature selection and comparison
     """
     # Load the SnapATAC2 tile matrix (source of truth)
     print("Loading SnapATAC2 tile matrix...")
@@ -62,7 +62,7 @@ def test_feature_selection(skip_snapatac2=False):
     count_match = None
     count_correlation = None
 
-    if not skip_snapatac2:
+    if not run_gatac_only:
         print("\nRunning SnapATAC2 feature selection...")
         start_snap = time.time()
         snap.pp.select_features(
@@ -98,7 +98,7 @@ def test_feature_selection(skip_snapatac2=False):
     gatac_counts = gatac_tile.var['accessibility_count'].values
 
     # Calculate comparisons (only if not skipping SnapATAC2)
-    if not skip_snapatac2:
+    if not run_gatac_only:
         snap_n_selected = np.sum(snap_selected)
 
         # Check feature overlap
@@ -224,11 +224,11 @@ REMAINING DIFFERENCE ({len(snap_only)} features): Tie-breaking at boundary.
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test GATAC feature selection")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 feature selection and comparison"
+        help="Run GATAC only, skip SnapATAC2 feature selection and comparison"
     )
     args = parser.parse_args()
 
-    test_feature_selection(skip_snapatac2=args.skip_snapatac2)
+    test_feature_selection(run_gatac_only=args.run_gatac_only)
 

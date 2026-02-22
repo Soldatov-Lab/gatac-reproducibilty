@@ -30,18 +30,18 @@ class GATACTimeoutError(Exception):
 def timeout_handler(signum, frame):
     raise GATACTimeoutError(f"GATAC gene matrix took longer than {GATAC_TIMEOUT}s!")
 
-def test_gene_matrix(skip_snapatac2=False):
+def test_gene_matrix(run_gatac_only=False):
     """Test GATAC gene matrix against SnapATAC2.
     
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 gene matrix construction and comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) gene matrix construction and comparison
     """
     # ============================================================================
     # SnapATAC2
     # ============================================================================
     snap_time = None
     snap_gene = None
-    if not skip_snapatac2:
+    if not run_gatac_only:
         snap_data = snap.read(SNAP_H5AD)
         start_snap = time.time()
         snap_gene = snap.pp.make_gene_matrix(snap_data, gene_anno=snap.genome.hg38)
@@ -74,7 +74,7 @@ def test_gene_matrix(skip_snapatac2=False):
     # Comparison
     # ============================================================================
     results = []
-    if not skip_snapatac2:
+    if not run_gatac_only:
         # Align cells to common set
         snap_gene = snap_gene.to_memory()
         common_cells = list(set(snap_gene.obs_names) & set(gatac_gene.obs_names))
@@ -127,10 +127,10 @@ def test_gene_matrix(skip_snapatac2=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test GATAC gene matrix")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 gene matrix and comparison"
+        help="Run GATAC only, skip SnapATAC2 gene matrix and comparison"
     )
     args = parser.parse_args()
     
-    test_gene_matrix(skip_snapatac2=args.skip_snapatac2)
+    test_gene_matrix(run_gatac_only=args.run_gatac_only)

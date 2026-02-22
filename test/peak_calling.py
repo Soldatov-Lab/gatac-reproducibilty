@@ -37,11 +37,11 @@ def calculate_overlap_intervals(peaks1, peaks2):
     return jaccard, recall_1, recall_2
 
 
-def test_peak_calling(skip_snapatac2=False):
+def test_peak_calling(run_gatac_only=False):
     """Test GATAC peak calling against SnapATAC2.
     
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 peak calling and comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) peak calling and comparison
     """
     # Load data
     print("Loading annotated PBMC 5k dataset...")
@@ -54,7 +54,7 @@ def test_peak_calling(skip_snapatac2=False):
     # SnapATAC2 peak calling (optional)
     snap_time = None
     snapatac_df = None
-    if not skip_snapatac2:
+    if not run_gatac_only:
         start_snap = time.time()
         snap.tl.macs3(data, groupby='cell_type')
         snapatac_merged = snap.tl.merge_peaks(data.uns['macs3'], snap.genome.hg38)
@@ -90,7 +90,7 @@ def test_peak_calling(skip_snapatac2=False):
     print(f"Saved {len(gatac_df):,} GATAC peaks to data/gatac_peaks.bed")
 
     # Calculate overlap metrics and run assertions (only if not skipping SnapATAC2)
-    if not skip_snapatac2:
+    if not run_gatac_only:
         jaccard, recall_snap, recall_gatac = calculate_overlap_intervals(snapatac_df, gatac_df)
 
         # Log results
@@ -130,10 +130,10 @@ def test_peak_calling(skip_snapatac2=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test GATAC peak calling")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 peak calling and comparison"
+        help="Run GATAC only, skip SnapATAC2 peak calling and comparison"
     )
     args = parser.parse_args()
     
-    test_peak_calling(skip_snapatac2=args.skip_snapatac2)
+    test_peak_calling(run_gatac_only=args.run_gatac_only)

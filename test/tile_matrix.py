@@ -11,18 +11,18 @@ import gatac as ga
 import pandas as pd
 
 
-def test_tile_matrix(skip_snapatac2=False):
+def test_tile_matrix(run_gatac_only=False):
     """Test GATAC tile matrix creation against SnapATAC2.
 
     Args:
-        skip_snapatac2: If True, skip SnapATAC2 tile matrix creation and comparison
+        run_gatac_only: If True, run GATAC only (skip SnapATAC2) tile matrix creation and comparison
     """
     # SnapATAC2 tile matrix (optional)
     snap_time = None
     snap_sum = None
     snap_tile = None
 
-    if not skip_snapatac2:
+    if not run_gatac_only:
         snap_tile = snap.read("data/pbmc.h5ad")
 
         start_snap = time.time()
@@ -39,7 +39,7 @@ def test_tile_matrix(skip_snapatac2=False):
     gatac_time = end_gatac - start_gatac
 
     # Compare results (only if not skipping SnapATAC2)
-    if not skip_snapatac2:
+    if not run_gatac_only:
         snap_tile = snap_tile.to_memory()
         gatac_tile = gatac_tile[snap_tile.obs_names]
 
@@ -94,13 +94,13 @@ def test_tile_matrix(skip_snapatac2=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test GATAC tile matrix creation")
     parser.add_argument(
-        "--skip-snapatac2",
+        "--run-gatac-only",
         action="store_true",
-        help="Skip SnapATAC2 tile matrix creation and comparison"
+        help="Run GATAC only, skip SnapATAC2 tile matrix creation and comparison"
     )
     args = parser.parse_args()
 
-    test_tile_matrix(skip_snapatac2=args.skip_snapatac2)
+    test_tile_matrix(run_gatac_only=args.run_gatac_only)
 
 
 
