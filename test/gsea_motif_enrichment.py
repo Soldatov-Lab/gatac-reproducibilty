@@ -140,12 +140,12 @@ def run_gpu(
     weight: float = 1.0,
 ) -> pd.DataFrame:
     """Run GPU prerank and return results as a DataFrame."""
-    from gatac.tl.gsea_gpu import prerank_gpu
+    from gatac.tl.gsea import prerank_gpu
 
     results = prerank_gpu(
-        gene_names=list(ranked_series.index),
+        feature_names=list(ranked_series.index),
         ranking_values=ranked_series.values,
-        gene_sets=gene_sets,
+        feature_sets=gene_sets,
         weight=weight,
         min_size=min_size,
         max_size=max_size,

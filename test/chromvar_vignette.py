@@ -128,18 +128,18 @@ def load_motifs_from_csv(path):
     return motifs
 
 
-def compare_deviation_scores(r_scores, dev_adata):
+def compare_deviation_scores(r_scores, adata, key="chromvar"):
     """Compare GATAC deviation scores against R reference.
 
+    Reads deviations from ``adata.obsm[key]`` (a DataFrame).
     Returns (overall_corr, mean_per_motif_corr, n_common_cells, n_common_motifs).
     """
-    common_cells = sorted(set(r_scores.index) & set(dev_adata.obs_names))
-    common_motifs = sorted(set(r_scores.columns) & set(dev_adata.var_names))
+    dev_df = adata.obsm[key]  # DataFrame (cells × motifs)
+    common_cells = sorted(set(r_scores.index) & set(dev_df.index))
+    common_motifs = sorted(set(r_scores.columns) & set(dev_df.columns))
 
     r_aligned = r_scores.loc[common_cells, common_motifs].values
-    gatac_aligned = pd.DataFrame(
-        dev_adata.X, index=dev_adata.obs_names, columns=dev_adata.var_names
-    ).loc[common_cells, common_motifs].values
+    gatac_aligned = dev_df.loc[common_cells, common_motifs].values
 
     overall_corr = np.corrcoef(
         r_aligned.flatten(), gatac_aligned.flatten()
@@ -189,17 +189,18 @@ def test_chromvar_with_r_inputs():
 
     # Run GATAC chromVAR
     t0 = time.time()
-    dev_adata = ga.tl.chromvar(adata)
+    ga.tl.compute_deviations(adata)
     elapsed = time.time() - t0
     print(f"  GATAC chromVAR time: {elapsed:.2f}s")
 
     # Compare
     overall_corr, per_motif_corr, n_cells, n_motifs = compare_deviation_scores(
-        r_scores, dev_adata
+        r_scores, adata
     )
 
+    dev_df = adata.obsm["chromvar"]
     print(f"\n  Common cells: {n_cells}, Common motifs: {n_motifs}")
-    print(f"  GATAC  mean={np.nanmean(dev_adata.X):.4f}  std={np.nanstd(dev_adata.X):.4f}")
+    print(f"  GATAC  mean={np.nanmean(dev_df.values):.4f}  std={np.nanstd(dev_df.values):.4f}")
     print(f"  R      mean={np.nanmean(r_scores.values):.4f}  std={np.nanstd(r_scores.values):.4f}")
     print(f"  Overall Deviation Correlation:  {overall_corr:.6f}")
     print(f"  Mean Per-Motif Correlation:     {per_motif_corr:.6f}")
@@ -242,22 +243,13 @@ def test_chromvar_full_pipeline():
     motifs = load_motifs_from_csv(R_OUTPUT_DIR / "motifs_pwm.csv")
     print(f"  Data: {adata.n_obs} cells x {adata.n_vars} peaks, {len(motifs)} motifs")
 
-    # --- GC content verification ---
-    peak_seqs_df = pd.read_csv(R_OUTPUT_DIR / "peak_sequences.csv")
     r_gc = pd.read_csv(R_OUTPUT_DIR / "gc_content.csv", index_col=0)
 
-    peak_seqs_df["python_gc"] = peak_seqs_df["sequence"].apply(
-        lambda s: (s.upper().count("G") + s.upper().count("C")) / len(s)
-        if len(s) > 0
-        else 0.0
-    )
-    peak_seqs_df.set_index("peak", inplace=True)
-    gc_comp = r_gc.join(peak_seqs_df[["python_gc"]])
-    gc_corr = gc_comp.iloc[:, 0].corr(gc_comp["python_gc"])
-    print(f"\n  GC Content Correlation (R vs Python): {gc_corr:.6f}")
-
     # --- GATAC motif scanning ---
+    # Drop R's gc_content so GATAC computes its own from the genome FASTA
     adata_pipeline = adata.copy()
+    if "gc_content" in adata_pipeline.var.columns:
+        adata_pipeline.var.drop(columns=["gc_content"], inplace=True)
 
     t0 = time.time()
     ga.tl.scan_motifs(
@@ -298,19 +290,27 @@ def test_chromvar_full_pipeline():
     print(f"  Motif Match Jaccard:     {jaccard:.4f}")
 
     # --- Background peaks (chromvar binning method) ---
+    # genome_fasta is passed so GATAC computes gc_content from scratch
     ga.tl.sample_bg_peaks(
         adata_pipeline,
         method="chromvar",
         n_iterations=50,
+        genome_fasta=str(GENOME_PATH),
     )
+
+    # --- GC content verification (GATAC vs R) ---
+    gatac_gc = adata_pipeline.var["gc_content"]
+    r_gc_aligned = r_gc.loc[adata_pipeline.var_names].iloc[:, 0]
+    gc_corr = gatac_gc.corr(r_gc_aligned)
+    print(f"\n  GC Content Correlation (R vs GATAC): {gc_corr:.6f}")
 
     # --- Compute deviations ---
     t0 = time.time()
-    dev_adata = ga.tl.chromvar(adata_pipeline)
+    ga.tl.compute_deviations(adata_pipeline)
     dev_time = time.time() - t0
 
     overall_corr, per_motif_corr, n_cells, n_motifs = compare_deviation_scores(
-        r_scores, dev_adata
+        r_scores, adata_pipeline
     )
 
     print(f"\n  ChromVAR Time: {dev_time:.2f}s")
@@ -385,11 +385,11 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
     adata.varm["bg_peaks"] = r_bg
 
     t0 = time.perf_counter()
-    dev_adata = ga.tl.chromvar(adata)
+    ga.tl.compute_deviations(adata)
     gatac_time = time.perf_counter() - t0
 
     overall_corr, per_motif_corr, n_common_cells, n_common_motifs = (
-        compare_deviation_scores(r_scores, dev_adata)
+        compare_deviation_scores(r_scores, adata)
     )
 
     results = [
