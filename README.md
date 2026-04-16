@@ -12,6 +12,7 @@ pixi run python test/make_peak_matrix.py
 pixi run python test/motif_enrichment.py
 pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_full_comparison.py
+pixi run python test/chromvar_vignette.py
 ```
 
 ## Results Summary
@@ -26,5 +27,6 @@ pixi run python test/chromvar_full_comparison.py
 | Peak Matrix | x4.8 | ✅ Full Match | Shape match, Peak/Cell correlation=1.0 |
 | Motif Enrichment | x7.5 | ⚠️ Avg Corr: 0.984 | Minor numerical differences in p-value calculation |
 | GSEA | x4.3 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
+| ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
 
 

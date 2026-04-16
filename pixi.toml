@@ -22,7 +22,7 @@ bioconductor-chromvar = { version = ">=1.30.1,<2", channel = "bioconda" }
 r-archr = { version = ">=1.0.3,<2", channel = "bioconda" }
 
 [pypi-dependencies]
-gatac = { path = "/home/faurel1/data/tools/GATAC" ,editable = true }
+gatac = { path = "/home/faurel1/data/tools/GATAC" ,editable = true, extras=["cuda12"] }
 snapatac2 = { git = "https://github.com/scverse/SnapATAC2" }
 jupyterlab = ">=4.5.3, <5"
 ipywidgets = ">=8.1.8, <9"
