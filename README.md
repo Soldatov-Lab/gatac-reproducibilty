@@ -1,6 +1,21 @@
+# Reproducibility
+
 Full test suite for comparing gatac with exisitng tools, mainly snapatac2, but also macs3 and chromvar.
 
-to be run in that order:
+## Setup as a Submodule (within gatac repo)
+
+Working within the main `gatac` repository:
+
+```bash
+cd reproducibility
+pixi install
+```
+
+The `pixi.toml` automatically references the GATAC installation at the parent directory level.
+
+## Running Tests
+
+Once setup is complete, run tests in the following order:
 
 ```bash
 pixi run python test/fragment_loading.py
