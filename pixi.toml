@@ -15,10 +15,18 @@ cmd  = "python analysis/gpu_line_tracer.py {{filename}} --skip-snapatac2"
 # Install all environments at once. Default env runs GATAC/SnapATAC2, the
 # amulet env runs the original AMULET v1.1 with pinned older numpy/pandas.
 # `pixi run --environment amulet ...` auto-installs the amulet env on first
-# use, so this task is only needed for cold-cache CI setup.
+# use, so this is only needed for cold-cache CI setup.
 [tasks.install-all]
 cmd = "pixi install --all"
 description = "Install all pixi environments (default + amulet)"
+
+# Download and extract the original AMULET v1.1 release to data/AMULET-v1.1/.
+# Idempotent: re-running skips the download if the install is already there.
+# Auto-invoked by test/amulet_doublet.py on first use, but can also be run
+# manually for offline setup.
+[tasks.amulet-setup]
+cmd = "bash -c 'set -e; DEST=data/AMULET-v1.1; if [ ! -f \"$DEST/AMULET.py\" ]; then mkdir -p data /tmp/amulet-dl; curl -sSL -o /tmp/amulet-dl/v1.1.zip https://github.com/UcarLab/AMULET/releases/download/v1.1/AMULET-v1.1.zip; unzip -q -o /tmp/amulet-dl/v1.1.zip -d \"$DEST\"; rm -rf \"$DEST/__MACOSX\"; chmod +x \"$DEST/AMULET.sh\"; rm -f /tmp/amulet-dl/v1.1.zip; fi; echo \"AMULET v1.1 ready at $DEST\"'"
+description = "Download and extract the original AMULET v1.1 release to data/AMULET-v1.1/ (one-time setup, idempotent)"
 
 # Shared conda dependencies (used by all envs).
 [dependencies]

@@ -23,12 +23,23 @@ The workspace has two pixi environments:
 ### When to use the `amulet` env
 
 Use it when running the **original** AMULET tool from the v1.1 release
-(`/home/faurel1/data/tools/AMULET-v1.1/`). The original code uses
-`np.object` which was removed in NumPy 1.24, so the env is pinned to
-Python 3.11 + numpy<1.24 + pandas<2.0.
+(automatically downloaded to `data/AMULET-v1.1/` by the `amulet-setup`
+pixi task). The original code uses `np.object` which was removed in
+NumPy 1.24, so the env is pinned to Python 3.11 + numpy<1.24 + pandas<2.0.
 
 The `amulet` env is **not** needed for the GATAC `gatac.pp.detect_doublets`
 function (which is in the default env).
+
+### AMULET v1.1 install path resolution
+
+The `amulet_doublet` test resolves the AMULET v1.1 install in this order:
+
+1. `AMULET_V11_DIR` env var (use this to point at an existing install)
+2. `<workspace>/data/AMULET-v1.1/` (project-local, gitignored, populated
+   by `pixi run amulet-setup`)
+
+The test auto-runs `pixi run amulet-setup` on first use if AMULET v1.1
+isn't found at the resolved path. The setup task is idempotent.
 
 
 ## Designing a new test file
