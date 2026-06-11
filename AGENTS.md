@@ -4,6 +4,33 @@ use pixi to run code and manage environment. always run test from the base direc
 pixi run python test/{name_of_test}.py
 ```
 
+## Pixi environments
+
+The workspace has two pixi environments:
+
+| Env | Command | Purpose | Python / key deps |
+|---|---|---|---|
+| `default` | `pixi run python ...` | GATAC, SnapATAC2, chromVAR, ArchR, full pipeline | Python 3.13, numpy 2.x |
+| `amulet` | `pixi run --environment amulet python ...` | Original AMULET v1.1 tool only (pinned for compatibility) | Python 3.11, numpy<1.24, pandas<2.0 |
+
+### Installing environments
+
+- `pixi install` installs only the default env
+- `pixi install --all` installs both envs (preferred on cold cache / CI)
+- `pixi run install-all` is a shortcut for the above
+- `pixi run --environment amulet ...` auto-installs the amulet env on first use
+
+### When to use the `amulet` env
+
+Use it when running the **original** AMULET tool from the v1.1 release
+(`/home/faurel1/data/tools/AMULET-v1.1/`). The original code uses
+`np.object` which was removed in NumPy 1.24, so the env is pinned to
+Python 3.11 + numpy<1.24 + pandas<2.0.
+
+The `amulet` env is **not** needed for the GATAC `gatac.pp.detect_doublets`
+function (which is in the default env).
+
+
 ## Designing a new test file
 
 Every test in `test/` follows the same structure. Use the existing files as
@@ -35,6 +62,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     test_foo(run_gatac_only=args.run_gatac_only)
 ```
+
+For tests that compare against an external tool with a different
+environment (e.g. AMULET), add a second flag `--skip-external` and
+invoke the external tool via `subprocess.run(["pixi", "run",
+"--environment", "external-env", ...])` so the env auto-installs.
 
 ### 3. Timing
 

@@ -1,6 +1,6 @@
 # Reproducibility
 
-Full test suite for comparing gatac with exisitng tools, mainly snapatac2, but also macs3 and chromvar.
+Full test suite for comparing gatac with existing tools, mainly snapatac2, but also macs3 and chromvar.
 
 ## Setup as a Submodule (within gatac repo)
 
@@ -8,10 +8,34 @@ Working within the main `gatac` repository:
 
 ```bash
 cd reproducibility
-pixi install
+pixi install --all
+# or:
+pixi run install-all
 ```
 
 The `pixi.toml` automatically references the GATAC installation at the parent directory level.
+
+The workspace has two pixi environments:
+
+| Env | Command | Purpose | Python / key deps |
+|---|---|---|---|
+| `default` | `pixi run python ...` | GATAC, SnapATAC2, chromVAR, ArchR, full pipeline | Python 3.13, numpy 2.x |
+| `amulet` | `pixi run --environment amulet python ...` | Original AMULET v1.1 tool only (pinned for compatibility) | Python 3.11, numpy<1.24, pandas<2.0 |
+
+The `amulet` env is auto-installed on first use, so `pixi install` is enough if you only plan to run the default-env tests.
+
+### Installing the original AMULET v1.1
+
+The `amulet` env provides the Python dependencies, but the AMULET scripts themselves live outside pixi. Download and extract the v1.1 release to the path expected by the test (or point the `AMULET_V11_DIR` env var at a custom location):
+
+```bash
+curl -sL -o /tmp/AMULET-v1.1.zip \
+  https://github.com/UcarLab/AMULET/releases/download/v1.1/AMULET-v1.1.zip
+unzip /tmp/AMULET-v1.1.zip -d /home/faurel1/data/tools/AMULET-v1.1
+chmod +x /home/faurel1/data/tools/AMULET-v1.1/AMULET.sh
+```
+
+The AMULET v1.1 code uses `np.object`, which was removed in NumPy 1.24. The `amulet` env pins Python 3.11 + numpy 1.23 + pandas 1.5 to keep the unpatched v1.1 code working as published.
 
 ## Running Tests
 
@@ -27,6 +51,17 @@ pixi run python test/make_peak_matrix.py
 pixi run python test/motif_enrichment.py
 pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_vignette.py
+pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET)
+```
+
+The `amulet_doublet` test downloads the canonical 10x Genomics PBMC 5k
+fragment file via `snap.datasets.pbmc5k()` (cached at
+`~/.cache/snapatac2/atac_pbmc_5k.tsv.gz`), then compares GATAC against
+the original AMULET v1.1 release. To run GATAC only (skip the AMULET
+comparison):
+
+```bash
+pixi run python test/amulet_doublet.py --run-gatac-only
 ```
 
 ## Results Summary
@@ -42,5 +77,4 @@ pixi run python test/chromvar_vignette.py
 | Motif Enrichment | x7.5 | ⚠️ Avg Corr: 0.984 | Minor numerical differences in p-value calculation |
 | GSEA | x11.2 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
 | ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
-
-
+| AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |

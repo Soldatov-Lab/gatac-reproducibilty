@@ -11,3 +11,7 @@ pixi.lock
 data/
 analysis/nsys_reports/
 *.pyc
+# test outputs
+test/*.txt
+test/*.pdf
+test/*.png

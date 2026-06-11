@@ -12,6 +12,15 @@ test-r = "Rscript test/chromvar_comparison_R.R"
 args = ["filename"]
 cmd  = "python analysis/gpu_line_tracer.py {{filename}} --skip-snapatac2"
 
+# Install all environments at once. Default env runs GATAC/SnapATAC2, the
+# amulet env runs the original AMULET v1.1 with pinned older numpy/pandas.
+# `pixi run --environment amulet ...` auto-installs the amulet env on first
+# use, so this task is only needed for cold-cache CI setup.
+[tasks.install-all]
+cmd = "pixi install --all"
+description = "Install all pixi environments (default + amulet)"
+
+# Shared conda dependencies (used by all envs).
 [dependencies]
 python = "<3.14"
 pip = "*"
@@ -21,7 +30,8 @@ bioconductor-jaspar2016 = "*"
 bioconductor-chromvar = { version = ">=1.30.1,<2", channel = "bioconda" }
 r-archr = { version = ">=1.0.3,<2", channel = "bioconda" }
 
-[pypi-dependencies]
+# GATAC feature (default env): heavy Python/R pipeline tools.
+[feature.gatac.pypi-dependencies]
 gatac = { path = "/home/faurel1/data/tools/GATAC" ,editable = true, extras=["cuda12"] }
 snapatac2 = { git = "https://github.com/scverse/SnapATAC2" }
 jupyterlab = ">=4.5.3, <5"
@@ -31,3 +41,17 @@ MOODS-python = "*"
 biopython = ">=1.73"
 pytest = ">=9.0.2, <10"
 gseapy = ">=1.1.3"
+
+# AMULET feature: original tool, v1.1 release, requires older numpy/pandas.
+[feature.amulet.dependencies]
+python = ">=3.11, <3.12"
+
+[feature.amulet.pypi-dependencies]
+numpy = "<1.24"
+pandas = "<2.0"
+scipy = "*"
+statsmodels = "*"
+
+[environments]
+default = ["gatac"]
+amulet = ["amulet"]
