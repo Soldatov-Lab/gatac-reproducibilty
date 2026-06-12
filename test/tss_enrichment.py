@@ -37,8 +37,7 @@ def test_tss_enrichment(run_gatac_only=False):
     parquet_filtered = "data/atac_pbmc_5k_filtered.parquet"
 
     start_gatac = time.time()
-    tss_df = ga.pp.load_tss_from_gtf(GTF_FILE)
-    metrics = ga.pp.compute_metrics(parquet_filtered, tss_df)
+    metrics = ga.pp.compute_metrics(parquet_filtered, GTF_FILE)
     end_gatac = time.time()
     gatac_time = end_gatac - start_gatac
 
