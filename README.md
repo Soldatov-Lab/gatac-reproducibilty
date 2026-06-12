@@ -9,7 +9,8 @@ Working within the main `gatac` repository:
 ```bash
 cd reproducibility
 pixi install --all
-# or:
+# or, to also fetch the AMULET v1.1 scripts (only needed for the
+# amulet_doublet test):
 pixi run install-all
 ```
 
@@ -23,22 +24,6 @@ The workspace has two pixi environments:
 | `amulet` | `pixi run --environment amulet python ...` | Original AMULET v1.1 tool only (pinned for compatibility) | Python 3.11, numpy<1.24, pandas<2.0 |
 
 The `amulet` env is auto-installed on first use, so `pixi install` is enough if you only plan to run the default-env tests.
-
-### Installing the original AMULET v1.1
-
-The `amulet` env provides the Python dependencies, but the AMULET scripts themselves are downloaded from GitHub into the project-local `data/AMULET-v1.1/` (gitignored). The `amulet_doublet` test triggers this download automatically on first use; you can also run it manually:
-
-```bash
-pixi run amulet-setup
-```
-
-The task is idempotent: re-running it skips the download if `data/AMULET-v1.1/AMULET.py` already exists. If you already have the v1.1 release installed elsewhere, point the test at it via the `AMULET_V11_DIR` env var:
-
-```bash
-AMULET_V11_DIR=/path/to/AMULET-v1.1 pixi run python test/amulet_doublet.py
-```
-
-The AMULET v1.1 code uses `np.object`, which was removed in NumPy 1.24. The `amulet` env pins Python 3.11 + numpy 1.23 + pandas 1.5 to keep the unpatched v1.1 code working as published.
 
 ## Running Tests
 

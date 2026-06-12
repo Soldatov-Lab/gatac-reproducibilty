@@ -15,10 +15,12 @@ cmd  = "python analysis/gpu_line_tracer.py {{filename}} --skip-snapatac2"
 # Install all environments at once. Default env runs GATAC/SnapATAC2, the
 # amulet env runs the original AMULET v1.1 with pinned older numpy/pandas.
 # `pixi run --environment amulet ...` auto-installs the amulet env on first
-# use, so this is only needed for cold-cache CI setup.
+# use, so this is only needed for cold-cache CI setup. Also runs the
+# amulet-setup task to download the original AMULET v1.1 scripts.
 [tasks.install-all]
+depends-on = ["amulet-setup"]
 cmd = "pixi install --all"
-description = "Install all pixi environments (default + amulet)"
+description = "Install all pixi environments (default + amulet) and the AMULET v1.1 scripts"
 
 # Download and extract the original AMULET v1.1 release to data/AMULET-v1.1/.
 # Idempotent: re-running skips the download if the install is already there.
