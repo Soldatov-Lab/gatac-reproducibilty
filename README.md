@@ -74,4 +74,4 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 | GSEA | x11.2 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
 | ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
 | AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |
-| Gene Score (ArchR) | — | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` vs ArchR `addGeneScoreMatrix`; per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
+| Gene Score (ArchR) | x28.4 | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` (3.2s) vs ArchR `addGeneScoreMatrix` (90.3s); per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
