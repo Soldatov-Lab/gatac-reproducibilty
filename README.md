@@ -40,7 +40,15 @@ pixi run python test/motif_enrichment.py
 pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_vignette.py
 pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET)
+pixi run python test/gene_score.py              # GATAC vs ArchR addGeneScoreMatrix (runs R oracle on first use)
 ```
+
+The `gene_score` test generates an ArchR ground-truth gene-score matrix via
+`test/gene_score_R.R` (no BSgenome needed — it builds the annotation from a
+cached gencode GFF3 and uses ArchR's `nullGenome`), caches it under
+`data/gene_score_output/`, then compares GATAC's `make_gene_score_matrix`
+against it. Regenerate the oracle with `--regenerate`; build the oracle only
+(skip GATAC) with `--skip-gatac`.
 
 The `amulet_doublet` test downloads the canonical 10x Genomics PBMC 5k
 fragment file via `snap.datasets.pbmc5k()` (cached at
@@ -66,3 +74,4 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 | GSEA | x11.2 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
 | ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
 | AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |
+| Gene Score (ArchR) | — | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` vs ArchR `addGeneScoreMatrix`; per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
