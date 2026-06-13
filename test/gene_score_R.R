@@ -24,6 +24,7 @@
 #   gene_regions.csv      per-gene regulatory window + geneWeight (ArchR internals)
 #   gene_regions.rds      same, as a GRanges (saveGeneRegions)
 #   params.csv            the gene-score parameters used
+#   archr_time.csv        addGeneScoreMatrix wall time (for the speedup report)
 #   fragments_archr.tsv.gz  the coordinate-sorted, bgzipped, tabix-indexed
 #                           fragment file ArchR ingested (GATAC reads the same)
 #
@@ -188,6 +189,10 @@ cat(sprintf("   %d cells passed ArchR QC\n", nCells(proj)))
 # ---------------------------------------------------------------------------
 cat("5. Computing ArchR gene scores...\n")
 geneRegionsRds <- file.path(oldwd, outDir, "gene_regions.rds")
+# Time only the addGeneScoreMatrix compute (tiling + scoring), so the number is
+# comparable to GATAC's make_gene_score_matrix call (Arrow/parquet creation is
+# excluded on both sides).
+archrT0 <- proc.time()[["elapsed"]]
 proj <- addGeneScoreMatrix(
   input             = proj,
   genes             = geneAnnotation$genes,
@@ -208,6 +213,8 @@ proj <- addGeneScoreMatrix(
   saveGeneRegions   = geneRegionsRds,
   force             = TRUE
 )
+archrGeneScoreTime <- proc.time()[["elapsed"]] - archrT0
+cat(sprintf("   addGeneScoreMatrix: %.2fs\n", archrGeneScoreTime))
 
 se <- getMatrixFromProject(proj, useMatrix = "GeneScoreMatrix")
 mat <- assay(se)                       # genes x cells, dgCMatrix
@@ -274,5 +281,12 @@ paramsDF <- data.frame(
   stringsAsFactors = FALSE
 )
 data.table::fwrite(paramsDF, file.path(outDir, "params.csv"))
+
+# ArchR addGeneScoreMatrix wall time, read back by gene_score.py for the
+# speedup comparison against GATAC.
+data.table::fwrite(
+  data.table::data.table(seconds = archrGeneScoreTime),
+  file.path(outDir, "archr_time.csv")
+)
 
 cat("\nDone. Oracle written to ", outDir, "\n", sep = "")

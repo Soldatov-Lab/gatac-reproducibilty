@@ -48,6 +48,7 @@ GENES_CSV = os.path.join(OUTDIR, "genes.csv")
 CELLS_CSV = os.path.join(OUTDIR, "cells.csv")
 ANNO_CSV = os.path.join(OUTDIR, "gene_annotation.csv")
 PARAMS_CSV = os.path.join(OUTDIR, "params.csv")
+ARCHR_TIME_CSV = os.path.join(OUTDIR, "archr_time.csv")
 FRAG_GZ = os.path.join(OUTDIR, "fragments_archr.tsv.gz")
 
 # Correctness thresholds. Validated run (PBMC 500-cell downsample, 643 cells x
@@ -195,9 +196,21 @@ def run_gatac_comparison(oracle, params, results):
     pergene_corr = _rowwise_corr(o_arr.T, a_arr.T)        # genes: profile across cells
     entry_corr = stats.pearsonr(o_arr.ravel(), a_arr.ravel())[0]
 
+    # ArchR's addGeneScoreMatrix wall time, recorded by the R oracle. Compares
+    # like-for-like with gatac_time (both exclude Arrow/parquet creation).
+    archr_time = None
+    if os.path.exists(ARCHR_TIME_CSV):
+        archr_time = float(pd.read_csv(ARCHR_TIME_CSV)["seconds"].iloc[0])
+
     results += [
         "--- GATAC vs ArchR ---",
-        f"GATAC:\t{gatac_time:.2f}s",
+        f"ArchR addGeneScoreMatrix:\t{archr_time:.2f}s" if archr_time is not None
+        else "ArchR addGeneScoreMatrix:\tn/a (regenerate oracle to record timing)",
+        f"GATAC make_gene_score_matrix:\t{gatac_time:.2f}s",
+    ]
+    if archr_time is not None and gatac_time > 0:
+        results.append(f"Speedup (ArchR / GATAC):\tx{archr_time / gatac_time:.1f}")
+    results += [
         f"Common cells:\t{len(common_cells)}",
         f"Common genes:\t{len(common_genes)}",
         f"Mean per-cell profile correlation:\t{percell_corr:.6f}",
