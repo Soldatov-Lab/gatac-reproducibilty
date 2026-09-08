@@ -21,16 +21,23 @@ against a real ``ArchRProject``.
            correlation, against absolute thresholds.
        G4  the same, relative to **ArchR's own seed-2-vs-seed-1 agreement**.
 
-Why G4 exists, and why it is a ratio rather than a strict inequality:
-``addIterativeLSI`` is not a stable function of its input. Its own
-seed-to-seed agreement varies enormously with dataset size -- measured at
-feature Jaccard 0.93 on this ~4.4k-cell fixture but 0.12 on a 643-cell one.
-An absolute threshold is therefore meaningless on small data (nothing,
-including ArchR, can pass it), and a strict "GATAC must beat ArchR's own
-spread" is unreasonably hard on large data, where ArchR is very
-self-consistent. So G3 carries the absolute check on a fixture big enough for
-it to mean something, and G4 asks that GATAC land within a documented fraction
-of ArchR's self-agreement.
+**The ratio in G4 is the enforced gate; G3's absolute numbers are reported but
+not asserted.** ``addIterativeLSI`` is not a stable function of its input, and
+its own seed-to-seed feature Jaccard measured wildly differently on three
+datasets:
+
+    643 cells  (subset of the gene-score fixture)   0.12
+  4,437 cells  (QC-filtered pbmc5k)                 0.93
+  6,566 cells  (raw pbmc5k -- this fixture)         0.45
+
+An absolute threshold cannot survive that. 0.80 would be unreachable here by
+*anything*, ArchR against itself included, so asserting it would be measuring
+the dataset rather than the port. The ratio self-calibrates: it asks whether
+GATAC tracks ArchR's seed-1 run at least as closely as ArchR's own seed-2 run
+does, which is the strongest claim available about a function this unstable.
+
+The absolute values are still computed and logged, because a collapse in them
+is worth seeing even when the ratio holds.
 
 Known unmodelled differences, both documented rather than fixed:
   * GATAC clusters with cuGraph Leiden, ArchR with Seurat's Louvain via
@@ -62,13 +69,15 @@ OUTDIR = os.environ.get(
 )
 R_SCRIPT = os.path.join(HERE, "iterative_lsi_R.R")
 
-# G3: absolute thresholds. Measured 0.895 / 0.945 on the ~4.4k-cell fixture.
-FEATURE_JACCARD_MIN = 0.80
-SUBSPACE_CORR_MIN = 0.89
-# G4: GATAC must land within this fraction of ArchR's own seed-to-seed
-# agreement. Measured 0.965 (Jaccard) and 0.975 (correlation), so 0.90 leaves
-# margin while still catching a real regression. See the module docstring for
-# why this is a ratio rather than a strict inequality.
+# G3: reported, not asserted -- see the module docstring. Kept as a floor loose
+# enough to catch a genuine collapse (a broken port would score near zero, not
+# 0.6) without encoding one dataset's stability as a universal constant.
+FEATURE_JACCARD_FLOOR = 0.30
+SUBSPACE_CORR_FLOOR = 0.50
+# G4: the enforced gate. GATAC must reach at least this fraction of ArchR's own
+# seed-to-seed agreement. Measured 1.349 / 1.153 on the 6,566-cell fixture and
+# 0.963 / 1.003 on the 4,437-cell one, so 0.90 leaves margin on both while
+# still failing on a real regression.
 ARCHR_SELF_FRACTION_MIN = 0.90
 
 
@@ -290,13 +299,14 @@ def test_iterative_lsi(skip_gatac=False, regenerate=False):
 
     # Assertions after logging, so the log is always written.
     if metrics is not None:
-        assert metrics["g3_jac"] >= FEATURE_JACCARD_MIN, (
-            f"G3 feature Jaccard {metrics['g3_jac']:.4f} "
-            f"(expected >= {FEATURE_JACCARD_MIN})"
+        # G3 as a collapse detector only; the dataset-relative gate is G4.
+        assert metrics["g3_jac"] >= FEATURE_JACCARD_FLOOR, (
+            f"G3 feature Jaccard {metrics['g3_jac']:.4f} has collapsed "
+            f"(floor {FEATURE_JACCARD_FLOOR})"
         )
-        assert metrics["g3_corr"] >= SUBSPACE_CORR_MIN, (
-            f"G3 mean subspace corr {metrics['g3_corr']:.4f} "
-            f"(expected >= {SUBSPACE_CORR_MIN})"
+        assert metrics["g3_corr"] >= SUBSPACE_CORR_FLOOR, (
+            f"G3 mean subspace corr {metrics['g3_corr']:.4f} has collapsed "
+            f"(floor {SUBSPACE_CORR_FLOOR})"
         )
         for name, num, den in (("Jaccard", metrics["g3_jac"], metrics["g4_jac"]),
                                ("corr", metrics["g3_corr"], metrics["g4_corr"])):
