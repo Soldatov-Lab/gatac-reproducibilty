@@ -41,6 +41,7 @@ pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_vignette.py
 pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET)
 pixi run python test/gene_score.py              # GATAC vs ArchR addGeneScoreMatrix (runs R oracle on first use)
+pixi run python test/lsi.py                     # GATAC vs ArchR .computeLSI + variable features (runs R oracle on first use)
 ```
 
 The `gene_score` test generates an ArchR ground-truth gene-score matrix via
@@ -49,6 +50,18 @@ cached gencode GFF3 and uses ArchR's `nullGenome`), caches it under
 `data/gene_score_output/`, then compares GATAC's `make_gene_score_matrix`
 against it. Regenerate the oracle with `--regenerate`; build the oracle only
 (skip GATAC) with `--skip-gatac`.
+
+The `lsi` test builds a binarized tile matrix from the fragment parquet the
+gene-score test vendors (so run that one first), then hands the *same* matrix
+to ArchR via `test/lsi_R.R` in two modes: `ArchR:::.computeLSI` for all three
+`LSIMethod` variants, and the variable-feature scoring of
+`ArchR:::.identifyVarFeatures`. The handover is raw CSC index arrays — a
+cells x features CSR and a features x cells CSC are byte-identical — so no
+transpose or reformatting sits between the two tools and every difference is
+algorithmic. Neither gate needs an ArchR arrow file or an ArchRProject, which
+keeps this test cheap enough to run on every change. `outlierQuantiles = NULL`
+on the ArchR side disables its depth-tail hold-out so the comparison isolates
+TF-IDF + SVD. Same flags as the gene-score test: `--regenerate`, `--skip-gatac`.
 
 The `amulet_doublet` test downloads the canonical 10x Genomics PBMC 5k
 fragment file via `snap.datasets.pbmc5k()` (cached at
@@ -75,3 +88,5 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 | ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
 | AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |
 | Gene Score (ArchR) | x28.4 | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` (3.2s) vs ArchR `addGeneScoreMatrix` (90.3s); per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
+| LSI (ArchR) | x20.5–x31.3 | ✅ Per-component \|r\|: 1.000 | GATAC `tl.lsi` (0.13–0.16s) vs ArchR `.computeLSI` (2.6–4.4s) for all three `LSIMethod` variants; every one of 30 components matches, max relative singular-value error 1.8e-07, on 643 cells × 290,170 tiles |
+| LSI Variable Features (ArchR) | — | ✅ Full Match | GATAC `tl.cluster_var_features` (0.03s) vs ArchR `.identifyVarFeatures` scoring given the same clusters: identical feature sets (Jaccard 1.000000), variance agreeing to 1.3e-15 |
