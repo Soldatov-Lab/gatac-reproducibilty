@@ -204,20 +204,29 @@ def compare(X, keys, cells, params, results):
     a1 = e1.loc[shared].to_numpy()
     a2 = e2.loc[shared].to_numpy()
 
-    a = ad.AnnData(X.copy())
-    a.obs["n_unique"] = cells["nFrags"].to_numpy(dtype=float)
-    t0 = time.perf_counter()
-    ga.tl.iterative_lsi(
-        a, int(params.n_dims), iterations=int(params.iterations),
-        n_features=int(params.var_features),
-        total_features=int(params.total_features),
-        method=int(params.lsi_method), scale_to=float(params.scale_to),
-        filter_quantile=float(params.filter_quantile),
-        cluster_params={"resolution": float(params.resolution),
-                        "max_clusters": int(params.max_clusters)},
-        random_state=1,
-    )
-    dt = time.perf_counter() - t0
+    def run_gatac():
+        a = ad.AnnData(X.copy())
+        a.obs["n_unique"] = cells["nFrags"].to_numpy(dtype=float)
+        t0 = time.perf_counter()
+        ga.tl.iterative_lsi(
+            a, int(params.n_dims), iterations=int(params.iterations),
+            n_features=int(params.var_features),
+            total_features=int(params.total_features),
+            method=int(params.lsi_method), scale_to=float(params.scale_to),
+            filter_quantile=float(params.filter_quantile),
+            cluster_params={"resolution": float(params.resolution),
+                            "max_clusters": int(params.max_clusters)},
+            random_state=1,
+        )
+        return a, time.perf_counter() - t0
+
+    # The first call in a process pays one-off CUDA JIT compilation, and with a
+    # cold kernel cache that dominated everything else -- it was what made an
+    # early version of this test report 74 s for a loop that runs in about 1 s.
+    # Run once to warm, then time.
+    _warm, _ = run_gatac()
+    del _warm
+    a, dt = run_gatac()
     fg = np.where(a.var["selected_iterative_lsi"].to_numpy())[0]
     eg = a.obsm["X_iterative_lsi"][rows]
 
