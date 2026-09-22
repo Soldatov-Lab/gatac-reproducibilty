@@ -130,7 +130,7 @@ def test_motif_enrichment(run_gatac_only=False):
         correlations = {}
         for cell_type in markers.keys():
             snap_df = snap_results[cell_type].sort('id')
-            gatac_df = gatac_results[cell_type].sort('id')
+            gatac_df = gatac_results[cell_type].sort_values('id')  # pandas; snap returns polars
 
             # Get fold changes (filter out inf values for correlation)
             snap_fc = np.array(snap_df['log2(fold change)'].to_list())
