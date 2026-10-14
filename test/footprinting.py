@@ -192,7 +192,8 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
                              chromosomes=CHROMS, verbose=False)
     t_fp = time.perf_counter() - t0
     t0 = time.perf_counter()
-    res = ga.tl.bindetect(tracks, MEME, verbose=False)
+    sites = ga.tl.bindetect_sites(tracks, MEME, verbose=False)     # reused for the TOBIAS-footprint run
+    res = ga.tl.bindetect(tracks, sites=sites, verbose=False)
     t_bd = time.perf_counter() - t0
     gatac_time = t_fp + t_bd
 
@@ -251,7 +252,7 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
         for g in groups:
             for c in CHROMS:
                 tob.values["footprint"][g][flay.chrom_slice(c)] = dump[f"{g}_footprints__{c}"]
-        res_t = ga.tl.bindetect(tob, MEME, verbose=False)
+        res_t = ga.tl.bindetect(tob, sites=sites, verbose=False)
         ref = pd.read_csv(os.path.join(CACHE, "bindetect", "bindetect_results.txt"), sep="\t",
                           keep_default_na=False, na_values=["NA"], float_precision="round_trip")
         same_rows = list(ref.output_prefix) == list(res_t.results.output_prefix)
