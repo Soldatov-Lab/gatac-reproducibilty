@@ -20,7 +20,7 @@ cmd  = "python analysis/gpu_line_tracer.py {{filename}} --skip-snapatac2"
 [tasks.install-all]
 depends-on = ["amulet-setup"]
 cmd = "pixi install --all"
-description = "Install all pixi environments (default + amulet) and the AMULET v1.1 scripts"
+description = "Install all pixi environments (default + amulet + tobias) and the AMULET v1.1 scripts"
 
 # Download and extract the original AMULET v1.1 release to data/AMULET-v1.1/.
 # Idempotent: re-running skips the download if the install is already there.
@@ -62,6 +62,16 @@ pandas = "<2.0"
 scipy = "*"
 statsmodels = "*"
 
+# TOBIAS feature: original TOBIAS 0.17.5 for the footprinting test
+# (test/footprinting.py runs it through test/footprinting_tobias.py).
+[feature.tobias.dependencies]
+python = ">=3.11, <3.12"
+
+[feature.tobias.pypi-dependencies]
+tobias = "==0.17.5"
+pyarrow = "*"
+
 [environments]
 default = ["gatac"]
 amulet = ["amulet"]
+tobias = ["tobias"]

@@ -16,14 +16,15 @@ pixi run install-all
 
 The `pixi.toml` automatically references the GATAC installation at the parent directory level.
 
-The workspace has two pixi environments:
+The workspace has three pixi environments:
 
 | Env | Command | Purpose | Python / key deps |
 |---|---|---|---|
 | `default` | `pixi run python ...` | GATAC, SnapATAC2, chromVAR, ArchR, full pipeline | Python 3.13, numpy 2.x |
 | `amulet` | `pixi run --environment amulet python ...` | Original AMULET v1.1 tool only (pinned for compatibility) | Python 3.11, numpy<1.24, pandas<2.0 |
+| `tobias` | `pixi run --environment tobias python ...` | Original TOBIAS 0.17.5, for the footprinting test | Python 3.11, tobias==0.17.5 |
 
-The `amulet` env is auto-installed on first use, so `pixi install` is enough if you only plan to run the default-env tests.
+The `amulet` and `tobias` envs are auto-installed on first use, so `pixi install` is enough if you only plan to run the default-env tests.
 
 ## Running Tests
 
@@ -43,7 +44,19 @@ pixi run python test/amulet_doublet.py          # uses both envs (GATAC + origin
 pixi run python test/gene_score.py              # GATAC vs ArchR addGeneScoreMatrix (runs R oracle on first use)
 pixi run python test/lsi.py                     # GATAC vs ArchR .computeLSI + variable features (runs R oracle on first use)
 pixi run python test/iterative_lsi.py           # GATAC vs ArchR addIterativeLSI end to end (builds an arrow file: slow, cached)
+pixi run python test/footprinting.py            # GATAC vs TOBIAS ATACorrect/ScoreBigwig/BINDetect (runs TOBIAS on first use: ~1 h, cached)
 ```
+
+The `footprinting` test compares `tl.footprint` + `tl.bindetect` with TOBIAS
+0.17.5 on three PBMC 5k pseudobulks (CD14 Mono, CD4 Memory, NK) on chr19 with
+the cisBP motifs. `test/footprinting_tobias.py` writes one BAM per pseudobulk
+from the same fragments parquet and runs TOBIAS in the `tobias` env. The
+outputs go to `data/footprinting_tobias/`; `--rerun-tobias` regenerates them.
+Each stage is first checked in isolation: given TOBIAS's own input (its fp64
+bias scores, its corrected track, its footprints), GATAC must match TOBIAS
+exactly. End to end, the DWM bias scores differ in their last bits (summation
+order), so a second TOBIAS run with those scores perturbed by ±1e-13 sets the
+tolerance. GATAC's deviation from TOBIAS must stay within twice that control's.
 
 The `gene_score` test generates an ArchR ground-truth gene-score matrix via
 `test/gene_score_R.R` (no BSgenome needed — it builds the annotation from a
@@ -103,3 +116,4 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 | LSI (ArchR) | x20.5–x31.3 | ✅ Per-component \|r\|: 1.000 | GATAC `tl.lsi` (0.13–0.16s) vs ArchR `.computeLSI` (2.6–4.4s) for all three `LSIMethod` variants; every one of 30 components matches, max relative singular-value error 1.8e-07, on 643 cells × 290,170 tiles |
 | LSI Variable Features (ArchR) | — | ✅ Full Match | GATAC `tl.cluster_var_features` (0.03s) vs ArchR `.identifyVarFeatures` scoring given the same clusters: identical feature sets (Jaccard 1.000000), variance agreeing to 1.3e-15 |
 | Iterative LSI (ArchR) | — | ✅ Jaccard 0.889, subspace corr 0.969 | GATAC `tl.iterative_lsi` (~1.1s warm, 3.0s on a cold CUDA kernel cache) vs ArchR `addIterativeLSI` on 4,437 cells × 500,000 tiles. ArchR's *own* seed-to-seed agreement on the same data is 0.927 / 0.969, so GATAC lands within 4% on features and matches on the embedding. Remaining difference is the clustering step (cuGraph Leiden vs Seurat Louvain, ARI ~0.95 on a shared embedding) and Seurat's `n.start=10` restarts, which cuGraph has no equivalent for; `filterBias` was ruled out (byte-identical output with it disabled). Both metrics move by ~0.005 between runs — `addIterativeLSI` is not stable, so treat them as a sample rather than a fixed value |
+| Footprinting (TOBIAS) | x59.1 | ✅ Stage-wise Full Match | GATAC `tl.footprint` + `tl.bindetect` (30.9s) vs TOBIAS 0.17.5 ATACorrect + ScoreBigwig + BINDetect (1,827s, 6 cores) on 3 PBMC pseudobulks × chr19 × 3,935 cisBP motifs. Given TOBIAS's own input, every stage is bit-identical (bias model, corrected track, footprints, BINDetect results table and motif distances). End to end, GATAC deviates from TOBIAS less than TOBIAS rerun with ±1e-13 bias-score noise does (change Spearman 0.99999 vs 0.99998; bound sites 0.27–0.36% vs 0.38–0.49%; top-50 TFs 50/50) |
