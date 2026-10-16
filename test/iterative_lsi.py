@@ -12,7 +12,7 @@ against a real ``ArchRProject``.
      TileMatrix plus both references. Arrow creation takes tens of minutes, so
      everything is cached; ``--regenerate`` forces a rebuild.
 
-  2. GATAC's ``tl.iterative_lsi`` runs on the *exported* TileMatrix, so both
+  2. GATAC's ``dr.iterative_lsi`` runs on the *exported* TileMatrix, so both
      sides consume identical input and every difference is algorithmic.
 
   3. Two things are scored:
@@ -180,7 +180,7 @@ def sanity_check_oracle(X, cells, params, results):
 def gatac_available():
     try:
         import gatac as ga
-        return hasattr(ga.tl, "iterative_lsi")
+        return hasattr(ga.dr, "iterative_lsi")
     except Exception:
         return False
 
@@ -217,7 +217,7 @@ def compare(X, keys, cells, params, results):
         a = ad.AnnData(X.copy())
         a.obs["n_unique"] = cells["nFrags"].to_numpy(dtype=float)
         t0 = time.perf_counter()
-        ga.tl.iterative_lsi(
+        ga.dr.iterative_lsi(
             a, int(params.n_dims), iterations=int(params.iterations),
             n_features=int(params.var_features),
             total_features=int(params.total_features),
@@ -284,7 +284,7 @@ def test_iterative_lsi(skip_gatac=False, regenerate=False):
         results.append("(GATAC comparison skipped: --skip-gatac)")
     elif not gatac_available():
         results.append(
-            "(GATAC comparison skipped: ga.tl.iterative_lsi not available. The "
+            "(GATAC comparison skipped: ga.dr.iterative_lsi not available. The "
             "oracle is built and validated — this test becomes the correctness "
             "gate once the port lands.)"
         )

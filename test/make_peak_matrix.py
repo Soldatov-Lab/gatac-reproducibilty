@@ -31,6 +31,12 @@ if __name__ == '__main__':
         print(f"ERROR: Parquet file not found: {PARQUET_FILE}")
         print("Run fragment_loading.py first to create parquet file.")
         sys.exit(1)
+    try:
+        ga.io.FragmentFile(PARQUET_FILE)
+    except ValueError:
+        print(f"ERROR: {PARQUET_FILE} predates the current GATAC fragment format.")
+        print("Run fragment_loading.py again to convert it.")
+        sys.exit(1)
     
     # Load peaks
     peaks_df = pd.read_csv(
@@ -68,7 +74,6 @@ if __name__ == '__main__':
     # GATAC: Create peak matrix from parquet
     print("\n--- GATAC Peak Matrix ---")
     
-    import cudf
     from anndata import AnnData as AD
     
     # Filter fragments
@@ -81,9 +86,7 @@ if __name__ == '__main__':
     
     # Read parquet to get unique barcodes
     print("Reading filtered parquet file to get barcodes...")
-    frag_df = cudf.read_parquet(str(FILTERED_PARQUET), columns=['barcode'])
-    unique_barcodes = frag_df['barcode'].unique().to_pandas().tolist()
-    del frag_df
+    unique_barcodes = ga.io.FragmentFile(FILTERED_PARQUET).barcodes.tolist()
     
     # Create minimal AnnData with matching barcodes
     obs_df = pd.DataFrame(index=unique_barcodes)
@@ -94,7 +97,7 @@ if __name__ == '__main__':
     tile_data.uns['peaks'] = peaks_df
     
     start_gatac = time.time()
-    gatac_peak_mat = ga.tl.make_peak_matrix(
+    gatac_peak_mat = ga.peak.make_matrix(
         tile_data,
         parquet_path=str(FILTERED_PARQUET),
         use_rep='peaks',

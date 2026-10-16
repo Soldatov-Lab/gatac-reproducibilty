@@ -16,9 +16,9 @@ ArchR is the correctness *oracle*. This harness:
 
   3. Compares GATAC against it:
 
-       G0  ``tl.lsi`` vs ``.computeLSI``, all three methods -- per-component
+       G0  ``dr.lsi`` vs ``.computeLSI``, all three methods -- per-component
            |r| and singular values.
-       G2  ``tl.cluster_var_features`` vs ArchR's scoring, given the same
+       G2  ``dr.lsi.cluster_var_features`` vs ArchR's scoring, given the same
            clusters -- feature Jaccard, which should be exactly 1.
 
 Deliberately **not** covered here: the end-to-end ``addIterativeLSI``
@@ -94,6 +94,13 @@ def build_tile_matrix(regenerate=False):
             f"{FRAGMENTS} not found. It is produced by the gene-score test; "
             "run test/gene_score.py first."
         )
+    try:
+        ga.io.FragmentFile(FRAGMENTS)
+    except ValueError:
+        raise ValueError(
+            f"{FRAGMENTS} predates the current GATAC fragment format; "
+            "run test/gene_score.py again to convert it."
+        ) from None
     adata = ga.pp.make_tile_matrix(
         FRAGMENTS, chrom_sizes="hg38", tile_size=TILE_SIZE,
         min_fragments_per_cell=100, count_strategy="binarize",
@@ -164,7 +171,8 @@ def _percomp_corr(A, B):
 def gatac_lsi_available():
     try:
         import gatac as ga
-        return hasattr(ga.tl, "lsi") and hasattr(ga.tl, "cluster_var_features")
+        from gatac.dr.lsi import cluster_var_features  # noqa: F401
+        return hasattr(ga.dr, "lsi")
     except Exception:
         return False
 
@@ -174,12 +182,12 @@ def compare(X, clusters, results):
     import anndata as ad
 
     import gatac as ga
-    from gatac.tl.lsi import cluster_var_features
+    from gatac.dr.lsi import cluster_var_features
 
     metrics = {}
 
     results.append("")
-    results.append("--- G0: tl.lsi vs ArchR:::.computeLSI ---")
+    results.append("--- G0: dr.lsi vs ArchR:::.computeLSI ---")
     for m in (1, 2, 3):
         e_ref = np.loadtxt(os.path.join(OUTDIR, f"archr_lsi_{m}.csv"),
                            delimiter=",", skiprows=1)
@@ -197,7 +205,7 @@ def compare(X, clusters, results):
             a.var["selected"] = True
             a.obs["n_unique"] = np.diff(X.tocsr().indptr).astype(float)
             t0 = time.perf_counter()
-            ga.tl.lsi(a, N_COMPS, method=m, outlier_quantiles=None,
+            ga.dr.lsi(a, N_COMPS, method=m, outlier_quantiles=None,
                       depth_cor_cutoff=None)
             dt = min(dt, time.perf_counter() - t0)
 
@@ -289,7 +297,7 @@ def test_lsi(skip_gatac=False, regenerate=False):
         results.append("(GATAC comparison skipped: --skip-gatac)")
     elif not gatac_lsi_available():
         results.append(
-            "(GATAC comparison skipped: ga.tl.lsi not available. The oracle is "
+            "(GATAC comparison skipped: ga.dr.lsi not available. The oracle is "
             "built and validated — this test becomes the correctness gate once "
             "the port lands.)"
         )

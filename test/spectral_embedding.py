@@ -72,7 +72,7 @@ def test_spectral_embedding(run_gatac_only=False):
     # ---- GATAC spectral (GPU) ----
     print(f"\nRunning GATAC spectral (n_comps={n_comps})...")
     t0 = time.perf_counter()
-    ga.tl.spectral(gatac_filt, n_comps=n_comps, weighted_by_sd=False, chunk_size=10_000)
+    ga.dr.spectral(gatac_filt, n_comps=n_comps, weighted_by_sd=False, chunk_size=10_000)
     gatac_time = time.perf_counter() - t0
     gatac_evals = gatac_filt.uns["spectral_eigenvalue"]
     gatac_evecs = gatac_filt.obsm["X_spectral"]

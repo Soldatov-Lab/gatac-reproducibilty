@@ -12,7 +12,7 @@ import argparse
 import numpy as np
 import snapatac2 as snap
 import gatac as ga
-from gatac.tl.motif import DNAMotif, read_motifs
+from gatac.motif import DNAMotif, read as read_motifs
 from scipy.stats import pearsonr
 
 
@@ -34,7 +34,7 @@ def test_motif_enrichment(run_gatac_only=False):
     # Call peaks using GATAC (faster than MACS3)
     print("Calling peaks with GATAC...")
     parquet_path = "data/atac_pbmc_5k_filtered.parquet"
-    ga.tl.call_peaks(
+    ga.peak.call(
         data,
         groupby='cell_type',
         parquet_path=parquet_path,
@@ -45,13 +45,13 @@ def test_motif_enrichment(run_gatac_only=False):
 
     # Merge peaks and store in uns['peaks'] for make_peak_matrix
     print("Merging peaks...")
-    merged_peaks = ga.tl.merge_peaks(data.uns['gmacs'], chrom_sizes='hg38')
+    merged_peaks = ga.peak.merge(data.uns['gmacs'], chrom_sizes='hg38')
     data.uns['peaks'] = merged_peaks
     print(f"Merged peaks: {len(merged_peaks)} regions")
 
     # Create peak matrix using GATAC
     print("Creating peak matrix with GATAC...")
-    peak_adata = ga.tl.make_peak_matrix(
+    peak_adata = ga.peak.make_matrix(
         data,
         parquet_path=parquet_path,
         use_rep='peaks',
@@ -120,7 +120,7 @@ def test_motif_enrichment(run_gatac_only=False):
     # Run GATAC motif enrichment
     print("\nRunning GATAC motif enrichment...")
     start_gatac = time.time()
-    gatac_results = ga.tl.motif_enrichment(gatac_motifs, markers, genome_fasta)
+    gatac_results = ga.motif.enrichment(gatac_motifs, markers, genome_fasta)
     end_gatac = time.time()
     gatac_time = end_gatac - start_gatac
 

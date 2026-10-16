@@ -85,7 +85,7 @@ Wrap every tool call with `time.perf_counter()`:
 
 ```python
 t0 = time.perf_counter()
-ga.tl.foo(adata)
+ga.pp.foo(adata)
 gatac_time = time.perf_counter() - t0
 ```
 

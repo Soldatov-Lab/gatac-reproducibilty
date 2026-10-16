@@ -123,7 +123,7 @@ def load_motifs_from_csv(path):
         raw_counts = motif_df[["A", "C", "G", "T"]].values.astype(np.float64)
         pwm = raw_counts / raw_counts.sum(axis=1, keepdims=True)
         motifs.append(
-            ga.tl.DNAMotif(id=motif_id, pwm=pwm, name=motif_id, pfm=raw_counts)
+            ga.motif.DNAMotif(id=motif_id, pwm=pwm, name=motif_id, pfm=raw_counts)
         )
     return motifs
 
@@ -189,7 +189,7 @@ def test_chromvar_with_r_inputs():
 
     # Run GATAC chromVAR
     t0 = time.time()
-    ga.tl.compute_deviations(adata)
+    ga.motif.compute_deviations(adata)
     elapsed = time.time() - t0
     print(f"  GATAC chromVAR time: {elapsed:.2f}s")
 
@@ -252,7 +252,7 @@ def test_chromvar_full_pipeline():
         adata_pipeline.var.drop(columns=["gc_content"], inplace=True)
 
     t0 = time.time()
-    ga.tl.scan_motifs(
+    ga.motif.scan(
         adata_pipeline,
         motifs,
         str(GENOME_PATH),
@@ -291,7 +291,7 @@ def test_chromvar_full_pipeline():
 
     # --- Background peaks (chromvar binning method) ---
     # genome_fasta is passed so GATAC computes gc_content from scratch
-    ga.tl.sample_bg_peaks(
+    ga.motif.sample_bg_peaks(
         adata_pipeline,
         method="chromvar",
         n_iterations=50,
@@ -306,7 +306,7 @@ def test_chromvar_full_pipeline():
 
     # --- Compute deviations ---
     t0 = time.time()
-    ga.tl.compute_deviations(adata_pipeline)
+    ga.motif.compute_deviations(adata_pipeline)
     dev_time = time.time() - t0
 
     overall_corr, per_motif_corr, n_cells, n_motifs = compare_deviation_scores(
@@ -385,7 +385,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
     adata.varm["bg_peaks"] = r_bg
 
     t0 = time.perf_counter()
-    ga.tl.compute_deviations(adata)
+    ga.motif.compute_deviations(adata)
     gatac_time = time.perf_counter() - t0
 
     overall_corr, per_motif_corr, n_common_cells, n_common_motifs = (

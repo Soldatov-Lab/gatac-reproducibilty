@@ -30,6 +30,14 @@ The `amulet` and `tobias` envs are auto-installed on first use, so `pixi install
 
 Once setup is complete, run tests in the following order:
 
+`fragment_loading.py` writes the fragment Parquet files the other tests
+read (`data/atac_pbmc_5k.parquet`, `data/atac_pbmc_5k_filtered.parquet`).
+GATAC rejects Parquet files written before its current fragment format, so
+after updating GATAC from an older version, run it again first; the
+gene-score and AMULET tests convert their own cached Parquet again by
+themselves.
+
+
 ```bash
 pixi run python test/fragment_loading.py
 pixi run python test/tss_enrichment.py
@@ -47,7 +55,7 @@ pixi run python test/iterative_lsi.py           # GATAC vs ArchR addIterativeLSI
 pixi run python test/footprinting.py            # GATAC vs TOBIAS ATACorrect/ScoreBigwig/BINDetect (runs TOBIAS on first use: ~1 h, cached)
 ```
 
-The `footprinting` test compares `tl.footprint` + `tl.bindetect` with TOBIAS
+The `footprinting` test compares `tobias.footprint` + `tobias.bindetect` with TOBIAS
 0.17.5 on three PBMC 5k pseudobulks (CD14 Mono, CD4 Memory, NK) on chr19 with
 the cisBP motifs. `test/footprinting_tobias.py` writes one BAM per pseudobulk
 from the same fragments parquet and runs TOBIAS in the `tobias` env. The
@@ -113,7 +121,7 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 | ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
 | AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |
 | Gene Score (ArchR) | x28.4 | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` (3.2s) vs ArchR `addGeneScoreMatrix` (90.3s); per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
-| LSI (ArchR) | x20.5–x31.3 | ✅ Per-component \|r\|: 1.000 | GATAC `tl.lsi` (0.13–0.16s) vs ArchR `.computeLSI` (2.6–4.4s) for all three `LSIMethod` variants; every one of 30 components matches, max relative singular-value error 1.8e-07, on 643 cells × 290,170 tiles |
-| LSI Variable Features (ArchR) | — | ✅ Full Match | GATAC `tl.cluster_var_features` (0.03s) vs ArchR `.identifyVarFeatures` scoring given the same clusters: identical feature sets (Jaccard 1.000000), variance agreeing to 1.3e-15 |
-| Iterative LSI (ArchR) | — | ✅ Jaccard 0.889, subspace corr 0.969 | GATAC `tl.iterative_lsi` (~1.1s warm, 3.0s on a cold CUDA kernel cache) vs ArchR `addIterativeLSI` on 4,437 cells × 500,000 tiles. ArchR's *own* seed-to-seed agreement on the same data is 0.927 / 0.969, so GATAC lands within 4% on features and matches on the embedding. Remaining difference is the clustering step (cuGraph Leiden vs Seurat Louvain, ARI ~0.95 on a shared embedding) and Seurat's `n.start=10` restarts, which cuGraph has no equivalent for; `filterBias` was ruled out (byte-identical output with it disabled). Both metrics move by ~0.005 between runs — `addIterativeLSI` is not stable, so treat them as a sample rather than a fixed value |
-| Footprinting (TOBIAS) | x108.7 | ✅ Stage-wise Full Match | GATAC `tl.footprint` + `tl.bindetect_sites` + `tl.bindetect` (16.8s) vs TOBIAS 0.17.5 ATACorrect + ScoreBigwig + BINDetect (1,827s, 6 cores) on 3 PBMC pseudobulks × chr19 × 3,935 cisBP motifs. Given TOBIAS's own input, every stage is bit-identical (bias model, corrected track, footprints, BINDetect results table and motif distances). End to end, GATAC deviates from TOBIAS less than TOBIAS rerun with ±1e-13 bias-score noise does (change Spearman 0.99999 vs 0.99998; bound sites 0.27–0.36% vs 0.38–0.49%; top-50 TFs 50/50) |
+| LSI (ArchR) | x20.5–x31.3 | ✅ Per-component \|r\|: 1.000 | GATAC `dr.lsi` (0.13–0.16s) vs ArchR `.computeLSI` (2.6–4.4s) for all three `LSIMethod` variants; every one of 30 components matches, max relative singular-value error 1.8e-07, on 643 cells × 290,170 tiles |
+| LSI Variable Features (ArchR) | — | ✅ Full Match | GATAC `dr.lsi.cluster_var_features` (0.03s) vs ArchR `.identifyVarFeatures` scoring given the same clusters: identical feature sets (Jaccard 1.000000), variance agreeing to 1.3e-15 |
+| Iterative LSI (ArchR) | — | ✅ Jaccard 0.889, subspace corr 0.969 | GATAC `dr.iterative_lsi` (~1.1s warm, 3.0s on a cold CUDA kernel cache) vs ArchR `addIterativeLSI` on 4,437 cells × 500,000 tiles. ArchR's *own* seed-to-seed agreement on the same data is 0.927 / 0.969, so GATAC lands within 4% on features and matches on the embedding. Remaining difference is the clustering step (cuGraph Leiden vs Seurat Louvain, ARI ~0.95 on a shared embedding) and Seurat's `n.start=10` restarts, which cuGraph has no equivalent for; `filterBias` was ruled out (byte-identical output with it disabled). Both metrics move by ~0.005 between runs — `addIterativeLSI` is not stable, so treat them as a sample rather than a fixed value |
+| Footprinting (TOBIAS) | x108.7 | ✅ Stage-wise Full Match | GATAC `tobias.footprint` + `tobias.bindetect_sites` + `tobias.bindetect` (16.8s) vs TOBIAS 0.17.5 ATACorrect + ScoreBigwig + BINDetect (1,827s, 6 cores) on 3 PBMC pseudobulks × chr19 × 3,935 cisBP motifs. Given TOBIAS's own input, every stage is bit-identical (bias model, corrected track, footprints, BINDetect results table and motif distances). End to end, GATAC deviates from TOBIAS less than TOBIAS rerun with ±1e-13 bias-score noise does (change Spearman 0.99999 vs 0.99998; bound sites 0.27–0.36% vs 0.38–0.49%; top-50 TFs 50/50) |

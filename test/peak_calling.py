@@ -72,7 +72,7 @@ def test_peak_calling(run_gatac_only=False):
     # GATAC peak calling
     parquet_path = "data/atac_pbmc_5k_filtered.parquet"
     start_gatac = time.time()
-    ga.tl.call_peaks(
+    ga.peak.call(
         data,
         groupby='cell_type',
         parquet_path=parquet_path,
@@ -80,7 +80,7 @@ def test_peak_calling(run_gatac_only=False):
         key_added='gmacs',
         verbose=False,
     )
-    gatac_merged = ga.tl.merge_peaks(data.uns['gmacs'], chrom_sizes='hg38')
+    gatac_merged = ga.peak.merge(data.uns['gmacs'], chrom_sizes='hg38')
     gatac_df = gatac_merged[['chrom', 'start', 'end']].copy()
     end_gatac = time.time()
     gatac_time = end_gatac - start_gatac

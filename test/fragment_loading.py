@@ -8,7 +8,6 @@ the same cell count as SnapATAC2 when using the same parameters.
 import time
 import snapatac2 as snap
 import gatac as ga
-import cudf
 import sys
 
 # Get the same fragment file used by both
@@ -30,7 +29,7 @@ snap_time = end_snap - start_snap
 
 # GATAC processing
 start_gatac = time.time()
-parquet = ga.pp.convert.make_parquet(
+parquet = ga.io.make_parquet(
     fragment_file, 
     output_path="data/atac_pbmc_5k.parquet"
 )
@@ -41,8 +40,8 @@ filtered = ga.pp.filter_fragments(
     chrom_sizes="hg38"
 )
 
-df_filtered = cudf.read_parquet(filtered)
-gatac_cells = df_filtered['barcode'].nunique()
+# Barcodes are ids in the file; its barcode table lists the cells kept
+gatac_cells = ga.io.FragmentFile(filtered).n_barcodes
 end_gatac = time.time()
 gatac_time = end_gatac - start_gatac
 

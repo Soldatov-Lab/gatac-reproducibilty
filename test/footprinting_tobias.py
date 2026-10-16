@@ -17,12 +17,14 @@ Subcommands, all driven by ``test/footprinting.py``:
 uniform noise in ±1e-13, the size of floating-point summation-order differences.
 """
 import argparse
+import json
 import os
 import pickle
 import subprocess
 from multiprocessing import Pool
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pysam
@@ -31,13 +33,29 @@ import sys
 READ_LEN = 50
 
 
+def read_fragments(path, chroms, barcodes):
+    """chrom, start, end of the fragments of ``barcodes`` on ``chroms`` in a GATAC
+    fragment parquet. This env has no GATAC: the file stores chromosome and barcode
+    ids, decoded with its own tables (``gatac.chroms`` footer, ``bc_name`` column)."""
+    pf = pq.ParquetFile(path)
+    chrom_names = json.loads(pf.metadata.metadata[b"gatac.chroms"])
+    bc_names = pq.read_table(path, columns=["bc_name"]).column("bc_name").drop_null().to_pylist()
+    bc_id = {b: i for i, b in enumerate(bc_names)}
+    keep = set(chroms)
+    t = pq.read_table(path, columns=["chrom_id", "start", "end"], filters=[
+        ("chrom_id", "in", [i for i, c in enumerate(chrom_names) if c in keep]),
+        ("barcode_id", "in", [bc_id[b] for b in barcodes if b in bc_id]),
+    ])
+    chrom = pc.take(pa.array(chrom_names, pa.string()), t["chrom_id"])
+    return pa.table({"chrom": chrom, "start": t["start"], "end": t["end"]})
+
+
 def cmd_bam(a):
     barcodes = [l.strip() for l in open(a.barcodes) if l.strip()]
     lengths = dict(l.split("\t")[:2] for l in open(a.fasta + ".fai"))
     lengths = {c: int(n) for c, n in lengths.items()}
     chroms = a.chroms.split(",")
-    t = pq.read_table(a.parquet, columns=["chrom", "start", "end", "barcode"],
-                      filters=[("chrom", "in", chroms), ("barcode", "in", barcodes)])
+    t = read_fragments(a.parquet, chroms, barcodes)
     t = t.group_by(["chrom", "start", "end"]).aggregate([])        # one pair per distinct fragment
     header = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": c, "LN": lengths[c]} for c in chroms]}
     tmp = a.out + ".unsorted.bam"

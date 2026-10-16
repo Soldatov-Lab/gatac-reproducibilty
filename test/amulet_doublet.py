@@ -47,6 +47,17 @@ AMULET_DIR = os.environ.get("AMULET_V11_DIR") or os.path.join(
 PIXI = shutil.which("pixi") or "pixi"
 
 
+def is_fragment_file(path):
+    """True when ``path`` exists in the current GATAC fragment format; caches
+    written before it are rejected by every reader and need converting again."""
+    import gatac as ga
+    try:
+        ga.io.FragmentFile(path)
+        return True
+    except (FileNotFoundError, ValueError):
+        return False
+
+
 def _ensure_amulet_v11():
     """Download the original AMULET v1.1 release if not already present.
 
@@ -199,9 +210,9 @@ def test_amulet_doublet(run_gatac_only=False):
     parquet_path = os.path.join(
         os.path.dirname(__file__), "amulet_doublet_input.parquet"
     )
-    if not os.path.exists(parquet_path):
+    if not is_fragment_file(parquet_path):
         print("Converting tsv.gz -> parquet (one-time, ~30s)...")
-        parquet_path = str(ga.pp.convert.make_parquet(fragments_tsv_gz, parquet_path))
+        parquet_path = str(ga.io.make_parquet(fragments_tsv_gz, parquet_path))
 
     print("Running GATAC AMULET doublet detection...")
     t0 = time.perf_counter()

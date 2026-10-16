@@ -1,5 +1,5 @@
 """
-Footprinting test: GATAC ``tl.footprint`` + ``tl.bindetect`` vs TOBIAS 0.17.5.
+Footprinting test: GATAC ``tobias.footprint`` + ``tobias.bindetect`` vs TOBIAS 0.17.5.
 
 Three PBMC 5k pseudobulks (CD14 Mono, CD4 Memory, NK) on chr19, cisBP motifs.
 TOBIAS (ATACorrect -> ScoreBigwig -> BINDetect, default parameters) runs in the
@@ -44,7 +44,7 @@ import pandas as pd
 import scipy.stats
 
 import gatac as ga
-fpmod = importlib.import_module("gatac.tl.footprint")     # the module, not ga.tl.footprint
+fpmod = importlib.import_module("gatac.tobias.footprint")     # the module, not ga.tobias.footprint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -188,12 +188,12 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
     # ---- GATAC ----
     fpmod._fai(FASTA)                                   # build the .fai outside the timing
     t0 = time.perf_counter()
-    tracks = ga.tl.footprint(adata, "group", PARQUET, FASTA, groups=groups, peaks=peaks,
+    tracks = ga.tobias.footprint(adata, "group", PARQUET, FASTA, groups=groups, peaks=peaks,
                              chromosomes=CHROMS, verbose=False)
     t_fp = time.perf_counter() - t0
     t0 = time.perf_counter()
-    sites = ga.tl.bindetect_sites(tracks, MEME, verbose=False)     # reused for the TOBIAS-footprint run
-    res = ga.tl.bindetect(tracks, sites=sites, verbose=False)
+    sites = ga.tobias.bindetect_sites(tracks, MEME, verbose=False)     # reused for the TOBIAS-footprint run
+    res = ga.tobias.bindetect(tracks, sites=sites, verbose=False)
     t_bd = time.perf_counter() - t0
     gatac_time = t_fp + t_bd
 
@@ -252,7 +252,7 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
         for g in groups:
             for c in CHROMS:
                 tob.values["footprint"][g][flay.chrom_slice(c)] = dump[f"{g}_footprints__{c}"]
-        res_t = ga.tl.bindetect(tob, sites=sites, verbose=False)
+        res_t = ga.tobias.bindetect(tob, sites=sites, verbose=False)
         ref = pd.read_csv(os.path.join(CACHE, "bindetect", "bindetect_results.txt"), sep="\t",
                           keep_default_na=False, na_values=["NA"], float_precision="round_trip")
         same_rows = list(ref.output_prefix) == list(res_t.results.output_prefix)

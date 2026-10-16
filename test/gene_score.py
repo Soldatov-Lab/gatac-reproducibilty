@@ -127,6 +127,17 @@ def gatac_gene_score_fn():
     return getattr(ga.pp, "make_gene_score_matrix", None)
 
 
+def is_fragment_file(path):
+    """True when ``path`` exists in the current GATAC fragment format; caches
+    written before it are rejected by every reader and need converting again."""
+    import gatac as ga
+    try:
+        ga.io.FragmentFile(path)
+        return True
+    except (FileNotFoundError, ValueError):
+        return False
+
+
 def run_gatac_comparison(oracle, params, results):
     """Run the GATAC port on identical inputs and compare to ArchR."""
     import gatac as ga
@@ -135,8 +146,8 @@ def run_gatac_comparison(oracle, params, results):
 
     # Same fragments ArchR ingested -> parquet for GATAC.
     parquet = os.path.join(OUTDIR, "fragments_archr.parquet")
-    if not os.path.exists(parquet):
-        ga.pp.convert.make_parquet(FRAG_GZ, output_path=parquet)
+    if not is_fragment_file(parquet):
+        ga.io.make_parquet(FRAG_GZ, output_path=parquet)
 
     t0 = time.perf_counter()
     # NOTE: the port is expected to accept explicit gene coordinates (the
