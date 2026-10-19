@@ -151,7 +151,7 @@ def run_oracle(mode):
 
 def ensure_oracle(X, clusters, regenerate=False):
     """Build both oracle outputs if missing."""
-    needed = [f"archr_lsi_{m}.csv" for m in (1, 2, 3)] + ["archr_varfeat.csv"]
+    needed = [f"archr_lsi_{m}.csv" for m in (1, 2, 3)] + ["archr_varfeat.csv", "archr_varfeat_time.csv"]
     if regenerate or not all(
         os.path.exists(os.path.join(OUTDIR, f)) for f in needed
     ):
@@ -228,6 +228,8 @@ def compare(X, clusters, results):
                          delimiter=",", skiprows=1).astype(int)
     ref_var = np.loadtxt(os.path.join(OUTDIR, "archr_var.csv"),
                          delimiter=",", skiprows=1)
+    t_ref = float(np.loadtxt(os.path.join(OUTDIR, "archr_varfeat_time.csv"),
+                             delimiter=",", skiprows=1))
     dt = float("inf")
     for _ in range(TIMING_REPEATS):
         t0 = time.perf_counter()
@@ -235,6 +237,7 @@ def compare(X, clusters, results):
                                         scale_to=SCALE_TO, binarize=True)
         dt = min(dt, time.perf_counter() - t0)
     metrics["varfeat_gatac_s"] = dt
+    metrics["varfeat_archr_s"] = t_ref
     jac = len(np.intersect1d(sel, ref_idx)) / len(np.union1d(sel, ref_idx))
     var_err = float(np.abs(var - ref_var).max() / np.abs(ref_var).max())
     metrics["feature_jaccard"] = jac
@@ -242,7 +245,7 @@ def compare(X, clusters, results):
     results.append(
         f"  feature Jaccard={jac:.6f} (identical sets: "
         f"{np.array_equal(sel, ref_idx)}) | variance max rel diff={var_err:.2e} "
-        f"| GATAC {dt:.2f}s"
+        f"| GATAC {dt:.2f}s vs ArchR {t_ref:.2f}s = x{t_ref / dt:.1f}"
     )
 
     speedups = [metrics[f"archr_s_{m}"] / metrics[f"gatac_s_{m}"] for m in (1, 2, 3)]

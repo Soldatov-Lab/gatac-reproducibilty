@@ -92,6 +92,8 @@ if (mode == "computelsi") {
                 n = n_cell, size = 4L)
   cat(sprintf("clusters: %d\n", length(unique(cl))))
 
+  # timed like cluster_var_features: pseudo-bulk through feature selection
+  t0 <- Sys.time()
   # pseudo-bulk, features x clusters -- the orientation ArchR scores in
   groups <- sort(unique(cl))
   groupMat <- vapply(groups,
@@ -102,12 +104,15 @@ if (mode == "computelsi") {
   groupMat <- log2(t(t(groupMat) / colSums(groupMat)) * scaleTo + 1)
   v <- matrixStats::rowVars(groupMat)
   idx <- sort(head(order(v, decreasing = TRUE), n_var))
+  dt <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 
   write.csv(data.frame(idx0 = idx - 1L),      # back to 0-based for Python
             file.path(outdir, "archr_varfeat.csv"), row.names = FALSE)
   write.csv(data.frame(var = v),
             file.path(outdir, "archr_var.csv"), row.names = FALSE)
-  cat(sprintf("selected %d of %d features\n", length(idx), n_feat))
+  write.csv(data.frame(seconds = dt),
+            file.path(outdir, "archr_varfeat_time.csv"), row.names = FALSE)
+  cat(sprintf("selected %d of %d features in %.2f s\n", length(idx), n_feat, dt))
 } else {
   stop(sprintf("Unknown MODE '%s'; expected 'computelsi' or 'varfeat'.", mode))
 }
