@@ -23,6 +23,10 @@ Usage::
 
     pixi run python test/amulet_doublet.py            # full comparison
     pixi run python test/amulet_doublet.py --run-gatac-only  # GATAC only
+    pixi run python test/amulet_doublet.py --rerun-amulet    # rerun AMULET v1.1
+
+AMULET v1.1 takes minutes, so its results and timings are cached in
+``data/amulet_v11_output/`` after the first run.
 
 The ``amulet`` env auto-installs on first use. To pre-install both envs:
 ``pixi install --all`` or ``pixi run install-all``.
@@ -45,6 +49,12 @@ AMULET_DIR = os.environ.get("AMULET_V11_DIR") or os.path.join(
     "AMULET-v1.1",
 )
 PIXI = shutil.which("pixi") or "pixi"
+# AMULET v1.1 results and timings, reused until --rerun-amulet
+AMULET_CACHE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "amulet_v11_output",
+)
 
 
 def is_fragment_file(path):
@@ -133,7 +143,7 @@ def _prepare_amulet_inputs(fragments_tsv_gz, workdir, min_fragments=200):
 def _run_amulet_original(fragments_tsv_gz, singlecell_csv, chrs_txt, outdir):
     """Run AMULET v1.1 step1 + step2 in the amulet env.
 
-    Returns dict with timing, doublet set, and per-barcode q-values.
+    Returns (step1_time, step2_time); the results are in ``outdir``.
     """
     os.makedirs(outdir, exist_ok=True)
 
@@ -160,14 +170,46 @@ def _run_amulet_original(fragments_tsv_gz, singlecell_csv, chrs_txt, outdir):
         outdir,
     ])
     step2_time = time.perf_counter() - t0
+    return step1_time, step2_time
 
-    probs = pd.read_csv(os.path.join(outdir, "MultipletProbabilities.txt"), sep="\t")
+
+def _amulet_v11(fragments_tsv_gz, min_fragments, rerun=False):
+    """AMULET v1.1 results, from AMULET_CACHE or a fresh run that refills it.
+
+    AMULET takes minutes and its output only depends on the fragment file and
+    the fixed parameters of this test, so it is run once and cached with its
+    timings. Returns dict with timing, doublet set, and per-barcode q-values.
+    """
+    probs_path = os.path.join(AMULET_CACHE, "MultipletProbabilities.txt")
+    time_path = os.path.join(AMULET_CACHE, "time.csv")
+    cached = not rerun and os.path.exists(probs_path) and os.path.exists(time_path)
+    if not cached:
+        print("Running original AMULET v1.1 (amulet env)...")
+        with tempfile.TemporaryDirectory(prefix="amulet_v11_") as workdir:
+            singlecell_csv, chrs_txt, _chroms = _prepare_amulet_inputs(
+                fragments_tsv_gz, workdir, min_fragments=min_fragments
+            )
+            outdir = os.path.join(workdir, "out")
+            step1_time, step2_time = _run_amulet_original(
+                fragments_tsv_gz, singlecell_csv, chrs_txt, outdir
+            )
+            os.makedirs(AMULET_CACHE, exist_ok=True)
+            shutil.copy(os.path.join(outdir, "MultipletProbabilities.txt"), probs_path)
+        pd.DataFrame({"step1": [step1_time], "step2": [step2_time]}).to_csv(time_path, index=False)
+    else:
+        print(f"Using cached AMULET v1.1 results from {AMULET_CACHE} (--rerun-amulet to regenerate)")
+    times = pd.read_csv(time_path).iloc[0]
+    step1_time, step2_time = float(times["step1"]), float(times["step2"])
+
+    probs = pd.read_csv(probs_path, sep="\t")
     n_cells = len(probs)
     doublet_set = set(probs.loc[probs["q-value"] < 0.01, "barcode"].astype(str))
     n_doublets = len(doublet_set)
     doublet_rate = 100.0 * n_doublets / n_cells if n_cells > 0 else 0.0
 
     return {
+        "cached": cached,
+        "probs_path": probs_path,
         "step1_time": step1_time,
         "step2_time": step2_time,
         "total_time": step1_time + step2_time,
@@ -179,12 +221,14 @@ def _run_amulet_original(fragments_tsv_gz, singlecell_csv, chrs_txt, outdir):
     }
 
 
-def test_amulet_doublet(run_gatac_only=False):
+def test_amulet_doublet(run_gatac_only=False, rerun_amulet=False):
     """Test GATAC AMULET doublet detection against the original AMULET v1.1.
 
     Args:
         run_gatac_only: If True, skip the original AMULET v1.1 run and
             comparison. Useful when the amulet pixi env is unavailable.
+        rerun_amulet: If True, run AMULET v1.1 again instead of reading its
+            cached results and timings.
     """
     # Canonical 10x Genomics PBMC 5k fragment file (CellRanger tsv.gz, ~1 GB)
     import snapatac2 as snap
@@ -246,19 +290,11 @@ def test_amulet_doublet(run_gatac_only=False):
     # ------------------------------------------------------------------
     amulet_stats = None
     if not run_gatac_only:
-        print("Running original AMULET v1.1 (amulet env)...")
-        with tempfile.TemporaryDirectory(prefix="amulet_v11_") as workdir:
-            singlecell_csv, chrs_txt, _chroms = _prepare_amulet_inputs(
-                fragments_tsv_gz, workdir, min_fragments=min_fragments
-            )
-            amulet_outdir = os.path.join(workdir, "out")
-            amulet_stats = _run_amulet_original(
-                fragments_tsv_gz, singlecell_csv, chrs_txt, amulet_outdir
-            )
-            shutil.copy(
-                os.path.join(amulet_outdir, "MultipletProbabilities.txt"),
-                os.path.join(os.path.dirname(__file__), "amulet_doublet_v1.1.txt"),
-            )
+        amulet_stats = _amulet_v11(fragments_tsv_gz, min_fragments, rerun=rerun_amulet)
+        shutil.copy(
+            amulet_stats["probs_path"],
+            os.path.join(os.path.dirname(__file__), "amulet_doublet_v1.1.txt"),
+        )
 
     # ------------------------------------------------------------------
     # 3. Build results list + log
@@ -284,7 +320,8 @@ def test_amulet_doublet(run_gatac_only=False):
     if amulet_stats is not None:
         results += [
             "",
-            "AMULET v1.1 original (amulet env, Python 3.11, numpy<1.24):",
+            "AMULET v1.1 original (amulet env, Python 3.11, numpy<1.24"
+            + ("; cached run" if amulet_stats["cached"] else "") + "):",
             f"  Cells tested:        {amulet_stats['n_cells']:,}",
             f"  Doublets detected:   {amulet_stats['n_doublets']:,}",
             f"  Doublet rate:        {amulet_stats['doublet_rate']:.2f}%",
@@ -359,5 +396,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip the original AMULET v1.1 run (use when amulet pixi env unavailable)",
     )
+    parser.add_argument(
+        "--rerun-amulet",
+        action="store_true",
+        help="Run AMULET v1.1 again instead of reading its cached results and timings",
+    )
     args = parser.parse_args()
-    test_amulet_doublet(run_gatac_only=args.run_gatac_only)
+    test_amulet_doublet(run_gatac_only=args.run_gatac_only, rerun_amulet=args.rerun_amulet)
