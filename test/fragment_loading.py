@@ -5,57 +5,81 @@ This test shows that with the chromosome filtering fix, GATAC produces
 the same cell count as SnapATAC2 when using the same parameters.
 """
 
+import argparse
+import os
 import time
+
 import snapatac2 as snap
 import gatac as ga
-import sys
-
-# Get the same fragment file used by both
-fragment_file = snap.datasets.pbmc5k()
 
 
-# SnapATAC2 processing
-start_snap = time.time()
-data = snap.pp.import_fragments(
-    fragment_file,
-    chrom_sizes=snap.genome.hg38,
-    file="data/pbmc.h5ad",
-    sorted_by_barcode=False,
-    min_num_fragments=200
-)
-snap_cells = data.n_obs
-end_snap = time.time()
-snap_time = end_snap - start_snap
+def test_fragment_loading(run_gatac_only=False):
+    # Get the same fragment file used by both
+    fragment_file = snap.datasets.pbmc5k()
 
-# GATAC processing
-start_gatac = time.time()
-parquet = ga.io.make_parquet(
-    fragment_file, 
-    output_path="data/atac_pbmc_5k.parquet"
-)
+    # GATAC processing
+    t0 = time.perf_counter()
+    parquet = ga.io.make_parquet(
+        fragment_file,
+        output_path="data/atac_pbmc_5k.parquet"
+    )
+    convert_time = time.perf_counter() - t0
 
-filtered = ga.pp.filter_fragments(
-    parquet,
-    min_fragments_per_cell=200,
-    chrom_sizes="hg38"
-)
+    t0 = time.perf_counter()
+    filtered = ga.pp.filter_fragments(
+        parquet,
+        min_fragments_per_cell=200,
+        chrom_sizes="hg38"
+    )
+    filter_time = time.perf_counter() - t0
+    gatac_time = convert_time + filter_time
 
-# Barcodes are ids in the file; its barcode table lists the cells kept
-gatac_cells = ga.io.FragmentFile(filtered).n_barcodes
-end_gatac = time.time()
-gatac_time = end_gatac - start_gatac
+    # Barcodes are ids in the file; its barcode table lists the cells kept
+    gatac_cells = ga.io.FragmentFile(filtered).n_barcodes
 
-# Results
+    results = []
+    if not run_gatac_only:
+        # SnapATAC2 processing
+        t0 = time.perf_counter()
+        data = snap.pp.import_fragments(
+            fragment_file,
+            chrom_sizes=snap.genome.hg38,
+            file="data/pbmc.h5ad",
+            sorted_by_barcode=False,
+            min_num_fragments=200
+        )
+        snap_cells = data.n_obs
+        snap_time = time.perf_counter() - t0
+        results.append(f"SnapATAC2:\t{snap_time:.2f}s")
 
-results = [
-    f"SnapATAC2:\t{snap_time:.2f}s",
-    f"GATAC:\t{gatac_time:.2f}s",
-    f"Match:\t{snap_cells == gatac_cells}"
-]
+    results += [
+        f"GATAC:\t{gatac_time:.2f}s",
+        f"  make_parquet:\t{convert_time:.2f}s",
+        f"  filter_fragments:\t{filter_time:.2f}s",
+        f"GATAC cells:\t{gatac_cells:,}",
+    ]
+    if not run_gatac_only:
+        results += [
+            f"Match:\t{snap_cells == gatac_cells}",
+            f"Speedup: {snap_time / gatac_time:.1f}x",
+        ]
+
+    log_path = os.path.join(os.path.dirname(__file__), "fragment_loading.log")
+    with open(log_path, "w", encoding="utf-8") as f:
+        for line in results:
+            print(line)
+            f.write(line + "\n")
+
+    if not run_gatac_only:
+        assert snap_cells == gatac_cells, f"Cell count differs: SnapATAC2 {snap_cells:,}, GATAC {gatac_cells:,}"
 
 
-with open(sys.argv[0].split(".")[0] + ".log", 'w') as f:
-    for result in results:
-        print(result)
-        f.write(result + '\n')
-
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Test GATAC fragment loading")
+    parser.add_argument(
+        "--run-gatac-only",
+        action="store_true",
+        help="Run GATAC only, skip SnapATAC2 run and comparison",
+    )
+    args = parser.parse_args()
+    test_fragment_loading(run_gatac_only=args.run_gatac_only)
