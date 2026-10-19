@@ -48,7 +48,7 @@ pixi run python test/make_peak_matrix.py
 pixi run python test/motif_enrichment.py
 pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_vignette.py
-pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET)
+pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET; AMULET output cached)
 pixi run python test/gene_score.py              # GATAC vs ArchR addGeneScoreMatrix (runs R oracle on first use)
 pixi run python test/lsi.py                     # GATAC vs ArchR .computeLSI + variable features (runs R oracle on first use)
 pixi run python test/iterative_lsi.py           # GATAC vs ArchR addIterativeLSI end to end (builds an arrow file: slow, cached)
@@ -92,15 +92,17 @@ fragments the AMULET test downloads and runs `addIterativeLSI` at **two**
 seeds — arrow creation takes tens of minutes, so everything is cached and
 `--regenerate` forces a rebuild. The second seed is the point: `addIterativeLSI`
 is not a stable function of its input (its own seed-to-seed feature Jaccard
-measured 0.93 on this ~4.4k-cell fixture but 0.12 on a 643-cell one), so ArchR's
-self-agreement, not a fixed threshold, is what makes GATAC's number
-interpretable.
+is 0.45 on this 6,566-cell fixture), so ArchR's self-agreement, not a fixed
+threshold, is what makes GATAC's number interpretable. The remaining
+difference is the clustering step (cuGraph Leiden vs Seurat Louvain, which
+also restarts `n.start=10` times).
 
 The `amulet_doublet` test downloads the canonical 10x Genomics PBMC 5k
 fragment file via `snap.datasets.pbmc5k()` (cached at
 `~/.cache/snapatac2/atac_pbmc_5k.tsv.gz`), then compares GATAC against
-the original AMULET v1.1 release. To run GATAC only (skip the AMULET
-comparison):
+the original AMULET v1.1 release. AMULET v1.1 takes about 5 minutes, so its
+results and timings are cached in `data/amulet_v11_output/`; `--rerun-amulet`
+runs it again. To run GATAC only (skip the AMULET comparison):
 
 ```bash
 pixi run python test/amulet_doublet.py --run-gatac-only
@@ -108,20 +110,23 @@ pixi run python test/amulet_doublet.py --run-gatac-only
 
 ## Results Summary
 
+One run of every test on an NVIDIA A100 80GB with 6 CPU cores (2026-10-19,
+GATAC `5d313ee`).
+
 | Test | Speedup | Result | Notes |
 |------|---------|--------|-------|
-| Fragment Loading | x3.5 | ✅ Full Match | Identical cell barcodes and fragment counts |
-| TSS Enrichment | x1.2 | ✅ Correlation: 1.000 | Cell count match, perfect TSSe correlation |
-| Tile Matrix | x4.5 | ✅ Full Match | Sum=123,061,807 for both tools |
-| Feature Selection | x1.1 | ⚠️ Overlap: 99.8% | 80 features differ due to tie-breaking at boundary count (272 features at count=204) |
-| Peak Calling | x4.1 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); Recall snap=97.3%, Recall gatac=98.9% |
-| Peak Matrix | x4.8 | ✅ Full Match | Shape match, Peak/Cell correlation=1.0 |
-| Motif Enrichment | x7.5 | ⚠️ Avg Corr: 0.984 | Minor numerical differences in p-value calculation |
-| GSEA | x11.2 | ✅ ES Match | GPU implementation vs GSEApy; 100% sign agreement |
-| ChromVAR Deviations | x10.0 | ✅ Correlation: 0.975 | GATAC vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
-| AMULET Doublet Detection | x3.5 | ✅ Full Match | GATAC vs original AMULET v1.1: Jaccard 1.000, q-value Pearson r 1.000 on 13,735 cells × 22 autosomes |
-| Gene Score (ArchR) | x28.4 | ✅ Entry-wise corr: 1.000 | GATAC `make_gene_score_matrix` (3.2s) vs ArchR `addGeneScoreMatrix` (90.3s); per-cell 0.99989, per-gene 0.99972, entry-wise 0.99992 on 643 cells × 19,933 genes |
-| LSI (ArchR) | x20.5–x31.3 | ✅ Per-component \|r\|: 1.000 | GATAC `dr.lsi` (0.13–0.16s) vs ArchR `.computeLSI` (2.6–4.4s) for all three `LSIMethod` variants; every one of 30 components matches, max relative singular-value error 1.8e-07, on 643 cells × 290,170 tiles |
-| LSI Variable Features (ArchR) | — | ✅ Full Match | GATAC `dr.lsi.cluster_var_features` (0.03s) vs ArchR `.identifyVarFeatures` scoring given the same clusters: identical feature sets (Jaccard 1.000000), variance agreeing to 1.3e-15 |
-| Iterative LSI (ArchR) | — | ✅ Jaccard 0.889, subspace corr 0.969 | GATAC `dr.iterative_lsi` (~1.1s warm, 3.0s on a cold CUDA kernel cache) vs ArchR `addIterativeLSI` on 4,437 cells × 500,000 tiles. ArchR's *own* seed-to-seed agreement on the same data is 0.927 / 0.969, so GATAC lands within 4% on features and matches on the embedding. Remaining difference is the clustering step (cuGraph Leiden vs Seurat Louvain, ARI ~0.95 on a shared embedding) and Seurat's `n.start=10` restarts, which cuGraph has no equivalent for; `filterBias` was ruled out (byte-identical output with it disabled). Both metrics move by ~0.005 between runs — `addIterativeLSI` is not stable, so treat them as a sample rather than a fixed value |
-| Footprinting (TOBIAS) | x108.7 | ✅ Stage-wise Full Match | GATAC `tobias.footprint` + `tobias.bindetect_sites` + `tobias.bindetect` (16.8s) vs TOBIAS 0.17.5 ATACorrect + ScoreBigwig + BINDetect (1,827s, 6 cores) on 3 PBMC pseudobulks × chr19 × 3,935 cisBP motifs. Given TOBIAS's own input, every stage is bit-identical (bias model, corrected track, footprints, BINDetect results table and motif distances). End to end, GATAC deviates from TOBIAS less than TOBIAS rerun with ±1e-13 bias-score noise does (change Spearman 0.99999 vs 0.99998; bound sites 0.27–0.36% vs 0.38–0.49%; top-50 TFs 50/50) |
+| Fragment Loading | x3.2 | ✅ Full Match | 14,225 cells in both; GATAC `make_parquet` + `filter_fragments` 66.2s vs SnapATAC2 `import_fragments` 209.1s |
+| TSS Enrichment | x1.9 | ✅ Correlation: 1.000 | Cell count match |
+| Tile Matrix | x5.2 | ✅ Full Match | Sum=123,061,807 for both tools |
+| Feature Selection | x1.7 | ⚠️ Overlap: 99.8% | 80 features differ by tie-breaking at the boundary count |
+| Peak Calling | x1.4 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); recall SnapATAC2 97.3%, GATAC 98.9%. GATAC's first group takes ~55s longer than the others (under investigation) |
+| Peak Matrix | x4.4 | ✅ Full Match | 40,876,001 nnz in both; peak/cell correlation 1.0 |
+| Motif Enrichment | x8.5 | ⚠️ Avg Corr: 0.985 | Minor numerical differences in p-value calculation |
+| GSEA | x26.1 | ✅ ES Match | GPU vs GSEApy, 300 sets; 100% sign agreement |
+| ChromVAR Deviations | x9.5 | ✅ Correlation: 0.975 | vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
+| AMULET Doublet Detection | x62.7 | ✅ Full Match | vs AMULET v1.1: Jaccard 1.000, q-value r 1.000 on 13,735 cells |
+| Gene Score (ArchR) | x21.0 | ✅ Entry-wise corr: 1.000 | vs `addGeneScoreMatrix`; 643 cells × 19,933 genes |
+| LSI (ArchR) | x25.7–x40.9 | ✅ Per-component \|r\|: 1.000 | vs `.computeLSI`, all three `LSIMethod` variants; 643 cells × 290,170 tiles |
+| LSI Variable Features (ArchR) | x21.1 | ✅ Full Match | vs `.identifyVarFeatures` scoring: identical feature sets |
+| Iterative LSI (ArchR) | x140.9 | ✅ Within ArchR's seed spread | vs `addIterativeLSI`: Jaccard 0.47, subspace corr 0.74; ArchR seed to seed 0.45 / 0.73 |
+| Footprinting (TOBIAS) | x71.8 | ✅ Stage-wise Full Match | vs TOBIAS 0.17.5 (6 cores); 3 pseudobulks × chr19 × 3,935 motifs; end to end within TOBIAS's own noise |
