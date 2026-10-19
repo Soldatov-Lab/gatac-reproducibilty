@@ -119,7 +119,7 @@ GATAC `5d313ee`).
 | TSS Enrichment | x1.9 | ✅ Correlation: 1.000 | Cell count match |
 | Tile Matrix | x5.2 | ✅ Full Match | Sum=123,061,807 for both tools |
 | Feature Selection | x1.7 | ⚠️ Overlap: 99.8% | 80 features differ by tie-breaking at the boundary count |
-| Peak Calling | x1.4 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); recall SnapATAC2 97.3%, GATAC 98.9%. GATAC's first group takes ~55s longer than the others (under investigation) |
+| Peak Calling | x2.9 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); recall SnapATAC2 97.3%, GATAC 98.9% |
 | Peak Matrix | x4.4 | ✅ Full Match | 40,876,001 nnz in both; peak/cell correlation 1.0 |
 | Motif Enrichment | x8.5 | ⚠️ Avg Corr: 0.985 | Minor numerical differences in p-value calculation |
 | GSEA | x26.1 | ✅ ES Match | GPU vs GSEApy, 300 sets; 100% sign agreement |

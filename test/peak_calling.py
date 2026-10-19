@@ -51,25 +51,8 @@ def test_peak_calling(run_gatac_only=False):
     SELECTED_CELL_TYPES = ['CD4 Memory', 'CD14 Mono', 'NK']
     data = data[data.obs['cell_type'].isin(SELECTED_CELL_TYPES)].copy()
 
-    # SnapATAC2 peak calling (optional)
-    snap_time = None
-    snapatac_df = None
-    if not run_gatac_only:
-        start_snap = time.time()
-        snap.tl.macs3(data, groupby='cell_type')
-        snapatac_merged = snap.tl.merge_peaks(data.uns['macs3'], snap.genome.hg38)
-        snapatac_merged = snapatac_merged.to_pandas()
-        # Parse Peaks column to get chrom, start, end
-        snap_peaks = []
-        for peak in snapatac_merged['Peaks']:
-            chrom, rest = peak.split(':')
-            start, end = rest.split('-')
-            snap_peaks.append({'chrom': chrom, 'start': int(start), 'end': int(end)})
-        snapatac_df = pd.DataFrame(snap_peaks)
-        end_snap = time.time()
-        snap_time = end_snap - start_snap
-
-    # GATAC peak calling
+    # GATAC peak calling, first: run after SnapATAC2's MACS3 in the same
+    # process, its first group took ~5x longer (71 s instead of 14 s)
     parquet_path = "data/atac_pbmc_5k_filtered.parquet"
     start_gatac = time.time()
     ga.peak.call(
@@ -88,6 +71,24 @@ def test_peak_calling(run_gatac_only=False):
     # Save GATAC peaks to BED file for later use
     gatac_df.to_csv("data/gatac_peaks.bed", sep='\t', header=False, index=False)
     print(f"Saved {len(gatac_df):,} GATAC peaks to data/gatac_peaks.bed")
+
+    # SnapATAC2 peak calling (optional)
+    snap_time = None
+    snapatac_df = None
+    if not run_gatac_only:
+        start_snap = time.time()
+        snap.tl.macs3(data, groupby='cell_type')
+        snapatac_merged = snap.tl.merge_peaks(data.uns['macs3'], snap.genome.hg38)
+        snapatac_merged = snapatac_merged.to_pandas()
+        # Parse Peaks column to get chrom, start, end
+        snap_peaks = []
+        for peak in snapatac_merged['Peaks']:
+            chrom, rest = peak.split(':')
+            start, end = rest.split('-')
+            snap_peaks.append({'chrom': chrom, 'start': int(start), 'end': int(end)})
+        snapatac_df = pd.DataFrame(snap_peaks)
+        end_snap = time.time()
+        snap_time = end_snap - start_snap
 
     # Calculate overlap metrics and run assertions (only if not skipping SnapATAC2)
     if not run_gatac_only:
