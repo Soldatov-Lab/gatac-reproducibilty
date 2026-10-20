@@ -28,15 +28,9 @@ The `amulet` and `tobias` envs are auto-installed on first use, so `pixi install
 
 ## Running Tests
 
-Once setup is complete, run tests in the following order:
-
-`fragment_loading.py` writes the fragment Parquet files the other tests
-read (`data/atac_pbmc_5k.parquet`, `data/atac_pbmc_5k_filtered.parquet`).
-GATAC rejects Parquet files written before its current fragment format, so
-after updating GATAC from an older version, run it again first; the
-gene-score and AMULET tests convert their own cached Parquet again by
-themselves.
-
+Run the tests in this order. `fragment_loading.py` writes the fragment Parquet
+files the other tests read, so run it again after updating GATAC's fragment
+format; `lsi.py` reads the fragments `gene_score.py` writes.
 
 ```bash
 pixi run python test/fragment_loading.py
@@ -48,65 +42,28 @@ pixi run python test/make_peak_matrix.py
 pixi run python test/motif_enrichment.py
 pixi run python test/gsea_motif_enrichment.py
 pixi run python test/chromvar_vignette.py
-pixi run python test/amulet_doublet.py          # uses both envs (GATAC + original AMULET; AMULET output cached)
-pixi run python test/gene_score.py              # GATAC vs ArchR addGeneScoreMatrix (runs R oracle on first use)
-pixi run python test/lsi.py                     # GATAC vs ArchR .computeLSI + variable features (runs R oracle on first use)
-pixi run python test/iterative_lsi.py           # GATAC vs ArchR addIterativeLSI end to end (builds an arrow file: slow, cached)
-pixi run python test/footprinting.py            # GATAC vs TOBIAS ATACorrect/ScoreBigwig/BINDetect (runs TOBIAS on first use: ~1 h, cached)
+pixi run python test/amulet_doublet.py
+pixi run python test/gene_score.py
+pixi run python test/lsi.py
+pixi run python test/iterative_lsi.py
+pixi run python test/footprinting.py
 ```
 
-The `footprinting` test compares `tobias.footprint` + `tobias.bindetect` with TOBIAS
-0.17.5 on three PBMC 5k pseudobulks (CD14 Mono, CD4 Memory, NK) on chr19 with
-the cisBP motifs. `test/footprinting_tobias.py` writes one BAM per pseudobulk
-from the same fragments parquet and runs TOBIAS in the `tobias` env. The
-outputs go to `data/footprinting_tobias/`; `--rerun-tobias` regenerates them.
-Each stage is first checked in isolation: given TOBIAS's own input (its fp64
-bias scores, its corrected track, its footprints), GATAC must match TOBIAS
-exactly. End to end, the DWM bias scores differ in their last bits (summation
-order), so a second TOBIAS run with those scores perturbed by ±1e-13 sets the
-tolerance. GATAC's deviation from TOBIAS must stay within twice that control's.
+Most tests take `--run-gatac-only` to skip the other tool. The slow reference
+tools run once and their outputs are cached under `data/`:
 
-The `gene_score` test generates an ArchR ground-truth gene-score matrix via
-`test/gene_score_R.R` (no BSgenome needed — it builds the annotation from a
-cached gencode GFF3 and uses ArchR's `nullGenome`), caches it under
-`data/gene_score_output/`, then compares GATAC's `make_gene_score_matrix`
-against it. Regenerate the oracle with `--regenerate`; build the oracle only
-(skip GATAC) with `--skip-gatac`.
+| Test | Reference | Cache | Rerun with |
+|------|-----------|-------|------------|
+| `amulet_doublet` | AMULET v1.1 | `data/amulet_v11_output/` | `--rerun-amulet` |
+| `gene_score` | ArchR `addGeneScoreMatrix` | `data/gene_score_output/` | `--regenerate` |
+| `lsi` | ArchR `.computeLSI`, `.identifyVarFeatures` | `data/lsi_output/` | `--regenerate` |
+| `iterative_lsi` | ArchR `addIterativeLSI`, two seeds | `data/iterative_lsi_output/` | `--regenerate` |
+| `footprinting` | TOBIAS 0.17.5 | `data/footprinting_tobias/` | `--rerun-tobias` |
 
-The `lsi` test builds a binarized tile matrix from the fragment parquet the
-gene-score test vendors (so run that one first), then hands the *same* matrix
-to ArchR via `test/lsi_R.R` in two modes: `ArchR:::.computeLSI` for all three
-`LSIMethod` variants, and the variable-feature scoring of
-`ArchR:::.identifyVarFeatures`. The handover is raw CSC index arrays — a
-cells x features CSR and a features x cells CSC are byte-identical — so no
-transpose or reformatting sits between the two tools and every difference is
-algorithmic. Neither gate needs an ArchR arrow file or an ArchRProject, which
-keeps this test cheap enough to run on every change. `outlierQuantiles = NULL`
-on the ArchR side disables its depth-tail hold-out so the comparison isolates
-TF-IDF + SVD. Same flags as the gene-score test: `--regenerate`, `--skip-gatac`.
-
-The `iterative_lsi` test is the end-to-end counterpart: `addIterativeLSI`
-reads its TileMatrix from arrow files, so unlike `lsi` it needs a real
-`ArchRProject`. Its oracle builds an arrow file from the same PBMC 5k
-fragments the AMULET test downloads and runs `addIterativeLSI` at **two**
-seeds — arrow creation takes tens of minutes, so everything is cached and
-`--regenerate` forces a rebuild. The second seed is the point: `addIterativeLSI`
-is not a stable function of its input (its own seed-to-seed feature Jaccard
-is 0.45 on this 6,566-cell fixture), so ArchR's self-agreement, not a fixed
-threshold, is what makes GATAC's number interpretable. The remaining
-difference is the clustering step (cuGraph Leiden vs Seurat Louvain, which
-also restarts `n.start=10` times).
-
-The `amulet_doublet` test downloads the canonical 10x Genomics PBMC 5k
-fragment file via `snap.datasets.pbmc5k()` (cached at
-`~/.cache/snapatac2/atac_pbmc_5k.tsv.gz`), then compares GATAC against
-the original AMULET v1.1 release. AMULET v1.1 takes about 5 minutes, so its
-results and timings are cached in `data/amulet_v11_output/`; `--rerun-amulet`
-runs it again. To run GATAC only (skip the AMULET comparison):
-
-```bash
-pixi run python test/amulet_doublet.py --run-gatac-only
-```
+`addIterativeLSI` changes with its seed, so GATAC is judged against ArchR's own
+seed-to-seed agreement. For footprinting, each TOBIAS stage given TOBIAS's own
+input must match exactly; end to end, GATAC must stay within twice the
+deviation of a TOBIAS rerun with ±1e-13 bias-score noise.
 
 ## Results Summary
 
