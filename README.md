@@ -76,8 +76,8 @@ GATAC `5d313ee`).
 | TSS Enrichment | x1.9 | ✅ Correlation: 1.000 | Cell count match |
 | Tile Matrix | x5.2 | ✅ Full Match | Sum=123,061,807 for both tools |
 | Feature Selection | x1.7 | ⚠️ Overlap: 99.8% | 80 features differ by tie-breaking at the boundary count |
-| Peak Calling | x2.9 | ⚠️ Jaccard: 0.963 | Different algorithms (gmacs vs MACS2); recall SnapATAC2 97.3%, GATAC 98.9% |
-| Peak Matrix | x4.4 | ✅ Full Match | 40,876,001 nnz in both; peak/cell correlation 1.0 |
+| Peak Calling | x24.4 | ✅ Full Match | vs `snap.tl.macs3` (MACS3 3.0.4): all 234,758 summits of 3 groups identical (positions, scores, fold enrichment, p/q); merged peaks identical (119,141); L40S |
+| Peak Matrix | x4.3 | ✅ Full Match | 42,932,832 nnz in both on the 119,141 merged peaks; L40S |
 | Motif Enrichment | x8.5 | ⚠️ Avg Corr: 0.985 | Minor numerical differences in p-value calculation |
 | GSEA | x26.1 | ✅ ES Match | GPU vs GSEApy, 300 sets; 100% sign agreement |
 | ChromVAR Deviations | x9.5 | ✅ Correlation: 0.975 | vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
