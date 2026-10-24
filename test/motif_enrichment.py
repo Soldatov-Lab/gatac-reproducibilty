@@ -128,6 +128,8 @@ def test_motif_enrichment(run_gatac_only=False):
     if not run_gatac_only:
         print("\nComparing results...")
         correlations = {}
+        fc_mismatches = {}
+        pval_mismatches = {}
         for cell_type in markers.keys():
             snap_df = snap_results[cell_type].sort('id')
             gatac_df = gatac_results[cell_type].sort_values('id')  # pandas; snap returns polars
@@ -135,6 +137,11 @@ def test_motif_enrichment(run_gatac_only=False):
             # Get fold changes (filter out inf values for correlation)
             snap_fc = np.array(snap_df['log2(fold change)'].to_list())
             gatac_fc = np.array(gatac_df['log2(fold change)'].to_list())
+            assert snap_df['id'].to_list() == gatac_df['id'].to_list()
+            fc_mismatches[cell_type] = int((~np.isclose(snap_fc, gatac_fc, rtol=1e-12, atol=1e-12)).sum())
+            pval_mismatches[cell_type] = int((~np.isclose(
+                snap_df['p-value'].to_numpy(), gatac_df['p-value'].to_numpy(), rtol=1e-9, atol=0
+            )).sum())
 
             # Filter valid values for correlation
             valid_mask = np.isfinite(snap_fc) & np.isfinite(gatac_fc)
@@ -157,6 +164,11 @@ def test_motif_enrichment(run_gatac_only=False):
         ]
         for cell_type, corr in correlations.items():
             results.append(f"Corr {cell_type}:\t{corr:.3f}")
+        for cell_type in markers.keys():
+            results.append(
+                f"Mismatches {cell_type}:\t{fc_mismatches[cell_type]} fold changes, "
+                f"{pval_mismatches[cell_type]} p-values of {len(gatac_motifs)} motifs"
+            )
 
         log_path = os.path.join(os.path.dirname(__file__), "motif_enrichment.log")
         with open(log_path, 'w') as f:
@@ -164,10 +176,10 @@ def test_motif_enrichment(run_gatac_only=False):
                 print(result)
                 f.write(result + '\n')
 
-        # Assertions to verify motif enrichment quality
-        assert avg_corr > 0.98, f"Average correlation too low: {avg_corr:.3f} (expected > 0.98)"
-        for cell_type, corr in correlations.items():
-            assert corr > 0.98, f"Correlation for {cell_type} too low: {corr:.3f} (expected > 0.98)"
+        # Same matches, so the same counts: fold changes and p-values agree to
+        # rounding (math.log2 and np.log2 can differ in the last bit)
+        assert sum(fc_mismatches.values()) == 0, f"fold changes differ: {fc_mismatches}"
+        assert sum(pval_mismatches.values()) == 0, f"p-values differ: {pval_mismatches}"
     else:
         # Log GATAC-only results
         results = [
