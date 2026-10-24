@@ -46,12 +46,16 @@ R_OUTPUT_DIR = Path(__file__).parent.parent / "data" / "chromvar_vignette_output
 GENOME_PATH = Path(__file__).parent.parent / "data" / "hg19.fa.gz"
 
 # ---------------------------------------------------------------------------
-# Correlation thresholds (based on observed reproducibility)
+# Thresholds
 # ---------------------------------------------------------------------------
 
-ISOLATION_CORR_THRESHOLD = 0.95
+# Given R's motif matches and background peaks, GATAC computes R's z-scores up
+# to float32 rounding (max |dz| ~0.002 on this data)
+ISOLATION_CORR_THRESHOLD = 0.99999
+PER_MOTIF_CORR_THRESHOLD = 0.99999
+ISOLATION_MAX_ABS_DIFF = 0.01
+# The full pipeline scans motifs and samples background peaks itself
 PIPELINE_CORR_THRESHOLD = 0.93
-PER_MOTIF_CORR_THRESHOLD = 0.93
 MATCH_CORR_THRESHOLD = 0.95
 
 
@@ -158,6 +162,16 @@ def compare_deviation_scores(r_scores, adata, key="chromvar"):
     return overall_corr, mean_per_motif, len(common_cells), len(common_motifs)
 
 
+def max_abs_diff(r_scores, adata, key="chromvar"):
+    """Largest absolute difference between R's and GATAC's z-scores."""
+    dev_df = adata.obsm[key]
+    cells = sorted(set(r_scores.index) & set(dev_df.index))
+    motifs = sorted(set(r_scores.columns) & set(dev_df.columns))
+    return float(np.nanmax(np.abs(
+        r_scores.loc[cells, motifs].values - dev_df.loc[cells, motifs].values
+    )))
+
+
 # ---------------------------------------------------------------------------
 # Test 1: Deviation kernel isolation
 # ---------------------------------------------------------------------------
@@ -204,13 +218,16 @@ def test_chromvar_with_r_inputs():
     print(f"  R      mean={np.nanmean(r_scores.values):.4f}  std={np.nanstd(r_scores.values):.4f}")
     print(f"  Overall Deviation Correlation:  {overall_corr:.6f}")
     print(f"  Mean Per-Motif Correlation:     {per_motif_corr:.6f}")
+    diff = max_abs_diff(r_scores, adata)
+    print(f"  Max |z difference|:             {diff:.4g}")
 
     assert overall_corr > ISOLATION_CORR_THRESHOLD, (
-        f"Deviation kernel correlation {overall_corr:.4f} < {ISOLATION_CORR_THRESHOLD}"
+        f"Deviation kernel correlation {overall_corr:.6f} < {ISOLATION_CORR_THRESHOLD}"
     )
     assert per_motif_corr > PER_MOTIF_CORR_THRESHOLD, (
-        f"Per-motif correlation {per_motif_corr:.4f} < {PER_MOTIF_CORR_THRESHOLD}"
+        f"Per-motif correlation {per_motif_corr:.6f} < {PER_MOTIF_CORR_THRESHOLD}"
     )
+    assert diff < ISOLATION_MAX_ABS_DIFF, f"z-scores differ by up to {diff:.4g}"
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +424,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
         f"GATAC:\t{gatac_time:.2f}s",
         "",
         f"Correlation (deviations):    {overall_corr:.6f}",
+        f"Max |z difference|:          {max_abs_diff(r_scores, adata):.4g}",
     ]
 
     if not run_gatac_only:
@@ -420,7 +438,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
             f.write(line + "\n")
 
     assert overall_corr > ISOLATION_CORR_THRESHOLD, (
-        f"Deviation correlation {overall_corr:.4f} < {ISOLATION_CORR_THRESHOLD}"
+        f"Deviation correlation {overall_corr:.6f} < {ISOLATION_CORR_THRESHOLD}"
     )
 
 

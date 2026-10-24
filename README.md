@@ -17,7 +17,7 @@ GATAC `5d313ee`).
 | Peak Matrix | x4.3 | ✅ Full Match | 42,932,832 nnz in both on the 119,141 merged peaks; L40S |
 | Motif Enrichment | x11.2 | ✅ Full Match | vs `snap.tl.motif_enrichment`: same matched regions, so fold changes and p-values of 3 groups × 1,165 cisBP motifs agree to rounding; L40S |
 | GSEA | x26.1 | ✅ ES Match | GPU vs GSEApy, 300 sets; 100% sign agreement |
-| ChromVAR Deviations | x9.5 | ✅ Correlation: 0.975 | vs R chromVAR `computeDeviations`; 36 cells × 28,596 peaks × 386 motifs |
+| ChromVAR Deviations | x43.6 | ✅ Correlation: 1.000 | vs R chromVAR `computeDeviations` given R's motif matches and background peaks: z-scores within 0.002 (float32 rounding); 36 cells × 28,596 peaks × 386 motifs; L40S. With GATAC's own motif scan and background peaks: 0.965 |
 | AMULET Doublet Detection | x62.7 | ✅ Full Match | vs AMULET v1.1: Jaccard 1.000, q-value r 1.000 on 13,735 cells |
 | Gene Score (ArchR) | x21.0 | ✅ Entry-wise corr: 1.000 | vs `addGeneScoreMatrix`; 643 cells × 19,933 genes |
 | LSI (ArchR) | x25.7–x40.9 | ✅ Per-component \|r\|: 1.000 | vs `.computeLSI`, all three `LSIMethod` variants; 643 cells × 290,170 tiles |
