@@ -9,6 +9,9 @@ import snapatac2 as snap
 import gatac as ga
 import pandas as pd
 
+from _timing import N_CPUS, cold_warm
+from _paths import data_path
+
 
 def test_tss_enrichment(run_gatac_only=False):
     """Test GATAC TSS enrichment against SnapATAC2.
@@ -18,14 +21,14 @@ def test_tss_enrichment(run_gatac_only=False):
     """
     # Load data
     print("Loading data...")
-    data = snap.read("data/pbmc.h5ad")
+    data = snap.read(data_path("pbmc.h5ad"))
 
     # SnapATAC2 TSSe (optional)
     snap_time = None
     df_snap = None
     if not run_gatac_only:
         start_snap = time.time()
-        snap.metrics.tsse(data, snap.genome.hg38)
+        snap.metrics.tsse(data, snap.genome.hg38, n_jobs=N_CPUS)
         end_snap = time.time()
         snap_time = end_snap - start_snap
 
@@ -34,12 +37,10 @@ def test_tss_enrichment(run_gatac_only=False):
 
     # GATAC TSSe
     GTF_FILE = snap.genome.hg38.annotation
-    parquet_filtered = "data/atac_pbmc_5k_filtered.parquet"
+    parquet_filtered = data_path("atac_pbmc_5k_filtered.parquet")
 
-    start_gatac = time.time()
-    metrics = ga.pp.compute_metrics(parquet_filtered, GTF_FILE)
-    end_gatac = time.time()
-    gatac_time = end_gatac - start_gatac
+    metrics, gatac_cold, gatac_time = cold_warm(
+        lambda: ga.pp.compute_metrics(parquet_filtered, GTF_FILE))
 
     df_gatac = metrics.set_index("barcode").to_pandas()
 
@@ -55,6 +56,7 @@ def test_tss_enrichment(run_gatac_only=False):
         results = [
             f"SnapATAC2:\t{snap_time:.2f}s",
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             f"TSSe correlation:\t{correlation:.3f}",
             f"Cell Count Match:\t{snap_cells == gatac_cells}"
         ]
@@ -71,6 +73,7 @@ def test_tss_enrichment(run_gatac_only=False):
     else:
         results = [
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             "(SnapATAC2 comparison skipped)"
         ]
 

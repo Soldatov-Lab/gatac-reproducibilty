@@ -42,6 +42,9 @@ import duckdb
 import pandas as pd
 import gatac as ga
 
+from _paths import data_path
+from _timing import N_CPUS, cold_warm
+
 
 AMULET_DIR = os.environ.get("AMULET_V11_DIR") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -50,11 +53,7 @@ AMULET_DIR = os.environ.get("AMULET_V11_DIR") or os.path.join(
 )
 PIXI = shutil.which("pixi") or "pixi"
 # AMULET v1.1 results and timings, reused until --rerun-amulet
-AMULET_CACHE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data",
-    "amulet_v11_output",
-)
+AMULET_CACHE = data_path("amulet_v11_output")
 
 
 def is_fragment_file(path):
@@ -251,23 +250,19 @@ def test_amulet_doublet(run_gatac_only=False, rerun_amulet=False):
     # 1. GATAC (default env)
     # ------------------------------------------------------------------
     # GATAC reads parquet; convert the canonical tsv.gz once and cache.
-    parquet_path = os.path.join(
-        os.path.dirname(__file__), "amulet_doublet_input.parquet"
-    )
+    parquet_path = data_path("amulet_doublet_input.parquet")
     if not is_fragment_file(parquet_path):
         print("Converting tsv.gz -> parquet (one-time, ~30s)...")
         parquet_path = str(ga.io.make_parquet(fragments_tsv_gz, parquet_path))
 
     print("Running GATAC AMULET doublet detection...")
-    t0 = time.perf_counter()
-    gatac_result = ga.pp.detect_doublets(
+    gatac_result, gatac_cold, gatac_time = cold_warm(lambda: ga.pp.detect_doublets(
         fragment_path=parquet_path,
         chrom_sizes="hg38",
         min_fragments=min_fragments,
         q_threshold=q_threshold,
-        n_threads=4,
-    )
-    gatac_time = time.perf_counter() - t0
+        n_threads=N_CPUS,
+    ))
 
     gatac_out = os.path.join(os.path.dirname(__file__), "amulet_doublet_gatac.csv")
     gatac_result.to_csv(gatac_out, index=False)
@@ -311,6 +306,7 @@ def test_amulet_doublet(run_gatac_only=False, rerun_amulet=False):
         f"  Doublets detected:   {gatac_n_doublets:,}",
         f"  Doublet rate:        {gatac_doublet_rate:.2f}%",
         f"  Time:                {gatac_time:.2f}s",
+        f"  Cold start:          {gatac_cold:.2f}s",
         f"  Output:              {gatac_out}",
     ]
 
@@ -331,6 +327,8 @@ def test_amulet_doublet(run_gatac_only=False, rerun_amulet=False):
         ]
         speedup = amulet_stats["total_time"] / gatac_time
         results.append(f"  Speedup (GATAC vs AMULET v1.1): {speedup:.1f}x")
+        results.append(f"  Speedup (cold start):           "
+                       f"{amulet_stats['total_time'] / gatac_cold:.1f}x")
 
         if amulet_stats["doublet_set"] or gatac_doublet_set:
             inter = gatac_doublet_set & amulet_stats["doublet_set"]

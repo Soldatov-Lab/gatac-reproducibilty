@@ -10,6 +10,9 @@ import snapatac2 as snap
 import gatac as ga
 import pandas as pd
 
+from _timing import N_CPUS, cold_warm
+from _paths import data_path
+
 
 def test_tile_matrix(run_gatac_only=False):
     """Test GATAC tile matrix creation against SnapATAC2.
@@ -23,20 +26,18 @@ def test_tile_matrix(run_gatac_only=False):
     snap_tile = None
 
     if not run_gatac_only:
-        snap_tile = snap.read("data/pbmc.h5ad")
+        snap_tile = snap.read(data_path("pbmc.h5ad"))
 
         start_snap = time.time()
-        snap.pp.add_tile_matrix(snap_tile)
+        snap.pp.add_tile_matrix(snap_tile, n_jobs=N_CPUS)
         end_snap = time.time()
         snap_time = end_snap - start_snap
 
     # Use the fixed parquet file that includes all fragments from the source TSV
-    parquet_filtered = "data/atac_pbmc_5k_filtered.parquet"
+    parquet_filtered = data_path("atac_pbmc_5k_filtered.parquet")
 
-    start_gatac = time.time()
-    gatac_tile = ga.pp.make_tile_matrix(parquet_filtered, chrom_sizes="hg38", tile_size=500)
-    end_gatac = time.time()
-    gatac_time = end_gatac - start_gatac
+    gatac_tile, gatac_cold, gatac_time = cold_warm(
+        lambda: ga.pp.make_tile_matrix(parquet_filtered, chrom_sizes="hg38", tile_size=500))
 
     # Compare results (only if not skipping SnapATAC2)
     if not run_gatac_only:
@@ -57,6 +58,7 @@ def test_tile_matrix(run_gatac_only=False):
         results = [
             f"SnapATAC2:\t{snap_time:.2f}s",
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             f"GATAC sum:\t{gatac_total}",
             f"SnapATAC2 sum:\t{snap_total}",
             f"Match:\t{match}",
@@ -79,6 +81,7 @@ def test_tile_matrix(run_gatac_only=False):
 
         results = [
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             f"GATAC sum:\t{gatac_total}",
             f"Shape:\t{gatac_tile.shape[0]:,} cells × {gatac_tile.shape[1]:,} tiles",
             f"(SnapATAC2 comparison skipped)"

@@ -17,9 +17,12 @@ from anndata import AnnData
 
 import gatac as ga
 
-PEAK_FILE = Path("data/gatac_peaks.bed")
-H5AD_FILE = Path("data/pbmc.h5ad")
-PARQUET_FILE = Path("data/atac_pbmc_5k.parquet")
+from _timing import cold_warm
+from _paths import data_path
+
+PEAK_FILE = Path(data_path("gatac_peaks.bed"))
+H5AD_FILE = Path(data_path("pbmc.h5ad"))
+PARQUET_FILE = Path(data_path("atac_pbmc_5k.parquet"))
 
 
 def _check_inputs():
@@ -38,10 +41,8 @@ def _gatac_peak_matrix(peaks_df):
     filtered = ga.pp.filter_fragments(PARQUET_FILE, min_fragments_per_cell=200, chrom_sizes="hg38")
     cells = AnnData(obs=pd.DataFrame(index=ga.io.FragmentFile(filtered).barcodes.tolist()))
     cells.uns["peaks"] = peaks_df
-    start = time.time()
-    mat = ga.peak.make_matrix(cells, parquet_path=str(filtered), use_rep="peaks",
-                              inplace=False, verbose=True)
-    return mat, time.time() - start
+    return cold_warm(lambda: ga.peak.make_matrix(
+        cells, parquet_path=str(filtered), use_rep="peaks", inplace=False, verbose=True))
 
 
 def test_make_peak_matrix(run_gatac_only=False):
@@ -54,10 +55,11 @@ def test_make_peak_matrix(run_gatac_only=False):
     peaks_df = pd.read_csv(PEAK_FILE, sep="\t", header=None, names=["chrom", "start", "end"])
     print(f"Loaded {len(peaks_df):,} peaks from {PEAK_FILE}")
 
-    gatac_mat, gatac_time = _gatac_peak_matrix(peaks_df)
+    gatac_mat, gatac_cold, gatac_time = _gatac_peak_matrix(peaks_df)
     results = [
         f"Peaks:\t{len(peaks_df):,}",
         f"GATAC:\t{gatac_time:.2f}s\t{gatac_mat.shape}\t{gatac_mat.X.nnz:,} nnz",
+        f"GATAC cold start:\t{gatac_cold:.2f}s",
     ]
 
     if not run_gatac_only:
@@ -65,7 +67,7 @@ def test_make_peak_matrix(run_gatac_only=False):
         snap_peaks = [f"{c}:{s}-{e}" for c, s, e in peaks_df.itertuples(index=False)]
         start = time.time()
         snap_mat = snap.pp.make_peak_matrix(snap_data, use_rep=snap_peaks,
-                                            file="data/snap_peak_matrix.h5ad")
+                                            file=data_path("snap_peak_matrix.h5ad"))
         snap_time = time.time() - start
         snap_X = snap_mat.X[:]
         snap_obs, snap_var = list(snap_mat.obs_names), list(snap_mat.var_names)
@@ -82,6 +84,7 @@ def test_make_peak_matrix(run_gatac_only=False):
         results += [
             f"SnapATAC2:\t{snap_time:.2f}s\t{snap_X.shape}\t{snap_X.nnz:,} nnz",
             f"Speedup:\t{snap_time / gatac_time:.2f}x",
+            f"Speedup (cold start):\t{snap_time / gatac_cold:.2f}x",
             f"Shape Match:\t{gatac_mat.shape == snap_X.shape}",
             f"Differing entries:\t{n_diff:,}",
         ]

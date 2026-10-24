@@ -18,11 +18,12 @@ library(BiocParallel)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(Biostrings)
 
-# Same seed and serial execution as the vignette
+# Same seed as the vignette; serial as in the vignette unless NTHREADS is set
 set.seed(2017)
-register(SerialParam())
+n_threads <- as.integer(Sys.getenv("NTHREADS", "1"))
+register(if (n_threads > 1) MulticoreParam(n_threads) else SerialParam())
 
-output_dir <- "data/chromvar_vignette_output"
+output_dir <- Sys.getenv("OUTDIR", "data/chromvar_vignette_output")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 cat("=== ChromVAR Vignette Reproducibility ===\n\n")

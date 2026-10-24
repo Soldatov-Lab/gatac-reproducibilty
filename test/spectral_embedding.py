@@ -25,6 +25,9 @@ import anndata as ad
 import snapatac2 as snap
 import gatac as ga
 
+from _timing import N_CPUS, cold_warm
+from _paths import data_path
+
 
 def test_spectral_embedding(run_gatac_only=False):
     """Compare GATAC spectral embedding against SnapATAC2.
@@ -35,7 +38,7 @@ def test_spectral_embedding(run_gatac_only=False):
 
     # ---- Load data ----
     print("Loading SnapATAC2 tile matrix...")
-    snap_tile = snap.read("data/pbmc.h5ad")
+    snap_tile = snap.read(data_path("pbmc.h5ad"))
     snap_tile = snap_tile.to_memory()
     print(f"Matrix shape: {snap_tile.shape[0]:,} cells × {snap_tile.shape[1]:,} features")
 
@@ -71,12 +74,11 @@ def test_spectral_embedding(run_gatac_only=False):
 
     # ---- GATAC spectral (GPU) ----
     print(f"\nRunning GATAC spectral (n_comps={n_comps})...")
-    t0 = time.perf_counter()
-    ga.dr.spectral(gatac_filt, n_comps=n_comps, weighted_by_sd=False, chunk_size=10_000)
-    gatac_time = time.perf_counter() - t0
+    _, gatac_cold, gatac_time = cold_warm(lambda: ga.dr.spectral(
+        gatac_filt, n_comps=n_comps, weighted_by_sd=False, chunk_size=10_000))
     gatac_evals = gatac_filt.uns["spectral_eigenvalue"]
     gatac_evecs = gatac_filt.obsm["X_spectral"]
-    print(f"  Time: {gatac_time:.2f}s")
+    print(f"  Time: {gatac_time:.2f}s (cold start {gatac_cold:.2f}s)")
     print(f"  Eigenvalues (top 5): {gatac_evals[:5]}")
     print(f"  Embedding shape: {gatac_evecs.shape}")
 
@@ -98,7 +100,8 @@ def test_spectral_embedding(run_gatac_only=False):
         # ---- SnapATAC2 spectral ----
         print(f"\nRunning SnapATAC2 spectral (n_comps={n_comps})...")
         t0 = time.perf_counter()
-        snap.tl.spectral(snap_filt, n_comps=n_comps, weighted_by_sd=False)
+        snap.tl.spectral(snap_filt, n_comps=n_comps, weighted_by_sd=False,
+                         num_threads=N_CPUS)
         snap_time = time.perf_counter() - t0
         snap_evals = snap_filt.uns["spectral_eigenvalue"]
         snap_evecs = snap_filt.obsm["X_spectral"]
@@ -166,6 +169,7 @@ def test_spectral_embedding(run_gatac_only=False):
             f"  Time: {snap_time:.2f}s",
             f"GATAC:",
             f"  Time: {gatac_time:.2f}s",
+            f"  Cold start: {gatac_cold:.2f}s",
             f"",
             f"Comparison:",
             f"  Eigenvalue correlation: {eval_corr:.6f}",
@@ -179,6 +183,7 @@ def test_spectral_embedding(run_gatac_only=False):
             for i in range(min(k_compare, 10))
         ] + [
             f"  Speedup: {snap_time / gatac_time:.1f}x",
+            f"  Speedup (cold start): {snap_time / gatac_cold:.1f}x",
         ]
 
         log_path = os.path.join(os.path.dirname(__file__), "spectral_embedding.log")
@@ -207,6 +212,7 @@ def test_spectral_embedding(run_gatac_only=False):
             f"",
             f"GATAC:",
             f"  Time: {gatac_time:.2f}s",
+            f"  Cold start: {gatac_cold:.2f}s",
             f"  Eigenvalues (top 5): {list(gatac_evals[:5])}",
             f"",
             f"(SnapATAC2 comparison skipped)",

@@ -12,8 +12,12 @@ Results and timings are written to ``gsea_motif_enrichment.log`` next to this fi
 import os
 import time
 
+import gseapy as gp
 import numpy as np
 import pandas as pd
+from gatac.motif._gsea import prerank_gpu
+
+from _timing import N_CPUS, cold_warm
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +97,6 @@ def run_gseapy(
     weight: float = 1.0,
 ) -> pd.DataFrame:
     """Run GSEApy prerank and return results as a DataFrame."""
-    import gseapy as gp
 
     res = gp.prerank(
         rnk=ranked_series,
@@ -103,7 +106,7 @@ def run_gseapy(
         min_size=min_size,
         max_size=max_size,
         weight=weight,
-        threads=1,
+        threads=N_CPUS,
         no_plot=True,
         verbose=False,
     )
@@ -140,7 +143,6 @@ def run_gpu(
     weight: float = 1.0,
 ) -> pd.DataFrame:
     """Run GPU prerank and return results as a DataFrame."""
-    from gatac.motif._gsea import prerank_gpu
 
     results = prerank_gpu(
         feature_names=list(ranked_series.index),
@@ -269,11 +271,12 @@ def test_gsea_gpu():
     log_lines.append(f"GSEApy time:\t{gseapy_time:.2f}s  ({len(gseapy_df)} sets)")
 
     # --- GPU ---
-    t0 = time.time()
-    gpu_df = run_gpu(ranked, gene_sets, permutation_num=PERMUTATION_NUM, seed=SEED)
-    gpu_time = time.time() - t0
+    gpu_df, gpu_cold, gpu_time = cold_warm(
+        lambda: run_gpu(ranked, gene_sets, permutation_num=PERMUTATION_NUM, seed=SEED))
     log_lines.append(f"GPU time:\t{gpu_time:.2f}s  ({len(gpu_df)} sets)")
+    log_lines.append(f"GPU cold start:\t{gpu_cold:.2f}s")
     log_lines.append(f"Speedup:\t{gseapy_time / gpu_time:.1f}x")
+    log_lines.append(f"Speedup (cold start):\t{gseapy_time / gpu_cold:.1f}x")
 
     # --- Metrics ---
     metrics = compare_results(gseapy_df, gpu_df)

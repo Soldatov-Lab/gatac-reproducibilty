@@ -13,8 +13,8 @@ ArchR is the correctness *oracle*. This harness:
      `scaleTo`).
 
   3. If GATAC exposes a gene-score port (`ga.pp.make_gene_score_matrix`),
-     runs it on the *same* fragments and the *same* gene coordinates ArchR
-     used, aligns cells/genes, and asserts per-cell and entry-wise
+     runs it on the *same* fragments (PBMC 5k, the cells with at least 200
+     fragments) and the *same* gene coordinates ArchR used, aligns cells/genes, and asserts per-cell and entry-wise
      correlation against ArchR. Until that port lands, the comparison is
      skipped (with a clear message) so the harness still builds & validates
      the oracle today and becomes the acceptance gate automatically later.
@@ -35,12 +35,15 @@ import pandas as pd
 from scipy import stats
 from scipy.io import mmread
 
+from _paths import data_path
+from _timing import N_CPUS, cold_warm
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)                      # reproducibility/ (run tests from here)
-OUTDIR = os.path.join(BASE, "data", "gene_score_output")
+OUTDIR = data_path("gene_score_output")
 R_SCRIPT = os.path.join(HERE, "gene_score_R.R")
 
 MTX = os.path.join(OUTDIR, "gene_score.mtx")
@@ -49,10 +52,14 @@ CELLS_CSV = os.path.join(OUTDIR, "cells.csv")
 ANNO_CSV = os.path.join(OUTDIR, "gene_annotation.csv")
 PARAMS_CSV = os.path.join(OUTDIR, "params.csv")
 ARCHR_TIME_CSV = os.path.join(OUTDIR, "archr_time.csv")
-FRAG_GZ = os.path.join(OUTDIR, "fragments_archr.tsv.gz")
+# What GATAC reads: the fragment-loading test's output, the PBMC 5k cells with
+# at least MIN_FRAGS fragments. ArchR reads the same 10x file (fragment_file())
+# with the same cut-off.
+PARQUET = data_path("atac_pbmc_5k_filtered.parquet")
+MIN_FRAGS = 200
 
-# Correctness thresholds. Validated run (PBMC 500-cell downsample, 643 cells x
-# 19,933 genes): per-cell profile 0.99989, per-gene 0.99972, entry-wise 0.99992.
+# Correctness thresholds. Validated run (PBMC 5k, 14,153 cells x 19,933 genes):
+# per-cell profile 0.99987, per-gene 0.99974, entry-wise 0.99990.
 # Tiny residual is the <=1bp tile-boundary / coordinate-convention difference.
 PERCELL_CORR_MIN = 0.99
 ENTRY_CORR_MIN = 0.99
@@ -63,10 +70,14 @@ ENTRY_CORR_MIN = 0.99
 # ---------------------------------------------------------------------------
 def ensure_oracle(regenerate=False):
     """Run the ArchR R oracle if its outputs are missing (or forced)."""
-    needed = [MTX, GENES_CSV, CELLS_CSV, ANNO_CSV, PARAMS_CSV, FRAG_GZ]
+    needed = [MTX, GENES_CSV, CELLS_CSV, ANNO_CSV, PARAMS_CSV]
     if not regenerate and all(os.path.exists(p) for p in needed):
-        print("Using cached ArchR oracle in", OUTDIR)
-        return
+        params = pd.read_csv(PARAMS_CSV).set_index("param")["value"]
+        # An oracle built before the switch to PBMC 5k records neither
+        if "fragments" in params and int(params.get("minFrags", -1)) == MIN_FRAGS:
+            print("Using cached ArchR oracle in", OUTDIR)
+            return
+        print("Cached ArchR oracle was built from other fragments; regenerating.")
     print("Generating ArchR oracle via gene_score_R.R (this runs ArchR; "
           "may take a few minutes)...")
     # Mirrors the AMULET test pattern: invoke the reference tool through pixi
@@ -74,7 +85,15 @@ def ensure_oracle(regenerate=False):
     subprocess.run(
         ["pixi", "run", "Rscript", R_SCRIPT],
         cwd=BASE, check=True,
+        env=dict(os.environ, NTHREADS=str(N_CPUS), GENE_SCORE_OUTDIR=OUTDIR,
+                 GENE_SCORE_FRAGMENTS=fragment_file(), MIN_FRAGS=str(MIN_FRAGS)),
     )
+
+
+def fragment_file():
+    """The canonical 10x PBMC 5k fragments, as the other tests obtain them."""
+    import snapatac2 as snap
+    return str(snap.datasets.pbmc5k())
 
 
 def load_oracle():
@@ -144,16 +163,16 @@ def run_gatac_comparison(oracle, params, results):
     fn = gatac_gene_score_fn()
     mat_o, genes_o, cells_o, _ = oracle
 
-    # Same fragments ArchR ingested -> parquet for GATAC.
-    parquet = os.path.join(OUTDIR, "fragments_archr.parquet")
+    parquet = PARQUET
     if not is_fragment_file(parquet):
-        ga.io.make_parquet(FRAG_GZ, output_path=parquet)
+        raise FileNotFoundError(
+            f"{parquet} is missing or predates the current GATAC fragment "
+            "format; run test/fragment_loading.py first.")
 
-    t0 = time.perf_counter()
     # NOTE: the port is expected to accept explicit gene coordinates (the
     # exact set ArchR used, ANNO_CSV) plus the ArchR-default parameters echoed
     # in params.csv. Adjust the kwargs here to the port's final signature.
-    adata = fn(
+    adata, gatac_cold, gatac_time = cold_warm(lambda: fn(
         parquet,
         gene_anno=ANNO_CSV,
         tile_size=int(params["tileSize"]),
@@ -167,8 +186,7 @@ def run_gatac_comparison(oracle, params, results):
         ceiling=int(params["ceiling"]),
         gene_scale_factor=int(params["geneScaleFactor"]),
         scale_to=float(params["scaleTo"]),
-    )
-    gatac_time = time.perf_counter() - t0
+    ))
 
     # Align on common cells & genes.
     g_cells = pd.Index(adata.obs_names.astype(str))
@@ -218,9 +236,11 @@ def run_gatac_comparison(oracle, params, results):
         f"ArchR addGeneScoreMatrix:\t{archr_time:.2f}s" if archr_time is not None
         else "ArchR addGeneScoreMatrix:\tn/a (regenerate oracle to record timing)",
         f"GATAC make_gene_score_matrix:\t{gatac_time:.2f}s",
+        f"GATAC cold start:\t{gatac_cold:.2f}s",
     ]
     if archr_time is not None and gatac_time > 0:
         results.append(f"Speedup (ArchR / GATAC):\tx{archr_time / gatac_time:.1f}")
+        results.append(f"Speedup (cold start):\tx{archr_time / gatac_cold:.1f}")
     results += [
         f"Common cells:\t{len(common_cells)}",
         f"Common genes:\t{len(common_genes)}",

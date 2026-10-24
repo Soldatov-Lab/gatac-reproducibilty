@@ -15,6 +15,9 @@ import gatac as ga
 from gatac.motif import DNAMotif, read as read_motifs
 from scipy.stats import pearsonr
 
+from _timing import cold_warm
+from _paths import data_path
+
 
 def test_motif_enrichment(run_gatac_only=False):
     """Test GATAC motif enrichment against SnapATAC2.
@@ -33,7 +36,7 @@ def test_motif_enrichment(run_gatac_only=False):
 
     # Call peaks using GATAC (faster than MACS3)
     print("Calling peaks with GATAC...")
-    parquet_path = "data/atac_pbmc_5k_filtered.parquet"
+    parquet_path = data_path("atac_pbmc_5k_filtered.parquet")
     ga.peak.call(
         data,
         groupby='cell_type',
@@ -119,10 +122,8 @@ def test_motif_enrichment(run_gatac_only=False):
 
     # Run GATAC motif enrichment
     print("\nRunning GATAC motif enrichment...")
-    start_gatac = time.time()
-    gatac_results = ga.motif.enrichment(gatac_motifs, markers, genome_fasta)
-    end_gatac = time.time()
-    gatac_time = end_gatac - start_gatac
+    gatac_results, gatac_cold, gatac_time = cold_warm(
+        lambda: ga.motif.enrichment(gatac_motifs, markers, genome_fasta))
 
     # Compare results (only if not skipping SnapATAC2)
     if not run_gatac_only:
@@ -160,6 +161,7 @@ def test_motif_enrichment(run_gatac_only=False):
             f"SnapATAC2:\t{snap_time:.2f}s",
             f"GATAC:\t{gatac_time:.2f}s",
             f"Speedup:\t{speedup:.1f}x",
+            f"Speedup (cold start):\t{snap_time / gatac_cold:.1f}x",
             f"Avg Correlation:\t{avg_corr:.3f}",
         ]
         for cell_type, corr in correlations.items():

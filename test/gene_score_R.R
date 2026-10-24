@@ -25,8 +25,11 @@
 #   gene_regions.rds      same, as a GRanges (saveGeneRegions)
 #   params.csv            the gene-score parameters used
 #   archr_time.csv        addGeneScoreMatrix wall time (for the speedup report)
-#   fragments_archr.tsv.gz  the coordinate-sorted, bgzipped, tabix-indexed
-#                           fragment file ArchR ingested (GATAC reads the same)
+#
+# Input: the 10x PBMC 5k fragment file ($GENE_SCORE_FRAGMENTS, the one
+# snap.datasets.pbmc5k() downloads). It is already coordinate-sorted and
+# bgzipped, so it only needs a tabix index. Cells need MIN_FRAGS fragments
+# (default 200, as in the fragment-loading test).
 #
 # Run with:
 #   pixi run Rscript test/gene_score_R.R
@@ -42,14 +45,15 @@ suppressMessages({
 })
 
 set.seed(1)
-addArchRThreads(threads = max(1L, parallel::detectCores() - 1L))
+addArchRThreads(threads = max(1L, as.integer(Sys.getenv("NTHREADS", parallel::detectCores() - 1L))))
 
 # ---------------------------------------------------------------------------
 # Configuration (env-overridable)
 # ---------------------------------------------------------------------------
 home      <- Sys.getenv("HOME")
 fragRaw   <- Sys.getenv("GENE_SCORE_FRAGMENTS",
-                        file.path(home, ".cache/snapatac2/atac_pbmc_500_downsample.tsv.gz"))
+                        file.path(home, ".cache/snapatac2/atac_pbmc_5k.tsv.gz"))
+minFrags  <- as.integer(Sys.getenv("MIN_FRAGS", "200"))
 gffPath   <- Sys.getenv("GENE_SCORE_GFF",
                         file.path(home, ".cache/snapatac2/gencode_v41_GRCh38.gff3.gz"))
 outDir    <- Sys.getenv("GENE_SCORE_OUTDIR", "data/gene_score_output")
@@ -71,6 +75,9 @@ excludeChr      <- c("chrY", "chrM")
 
 dir.create(outDir, showWarnings = FALSE, recursive = TRUE)
 dir.create(workDir, showWarnings = FALSE, recursive = TRUE)
+# Absolute, as the Arrow file is created from inside workDir
+outDir  <- normalizePath(outDir)
+workDir <- normalizePath(workDir)
 
 cat("=== Gene Score ArchR Oracle ===\n")
 cat(sprintf("ArchR %s\n", as.character(packageVersion("ArchR"))))
@@ -130,22 +137,21 @@ genomeAnnotation <- SimpleList(
 )
 
 # ---------------------------------------------------------------------------
-# 3. Prepare a coordinate-sorted, bgzipped, tabix-indexed fragment file
+# 3. Tabix index for the fragment file
 # ---------------------------------------------------------------------------
-cat("3. Preparing fragment file (sort + bgzip + tabix)...\n")
-fragOut <- file.path(outDir, "fragments_archr.tsv.gz")
-if (!file.exists(fragOut) || !file.exists(paste0(fragOut, ".tbi"))) {
-  frag <- data.table::fread(cmd = paste("zcat", shQuote(fragRaw)), header = FALSE,
-                            col.names = c("chr", "start", "end", "barcode", "count"))
-  frag <- frag[chr %in% standardChroms]
-  data.table::setorder(frag, chr, start)
-  tmpTsv <- file.path(outDir, "fragments_archr.tsv")
-  data.table::fwrite(frag, tmpTsv, sep = "\t", col.names = FALSE)
-  if (file.exists(fragOut)) file.remove(fragOut)
-  bgz <- Rsamtools::bgzip(tmpTsv, dest = fragOut, overwrite = TRUE)
-  file.remove(tmpTsv)
-  Rsamtools::indexTabix(bgz, format = "bed")
-  rm(frag); gc()
+# The 10x file is already sorted and bgzipped. If it cannot be indexed in
+# place (read-only cache), index a copy in outDir.
+cat("3. Indexing fragment file...\n")
+fragOut <- normalizePath(fragRaw)
+if (!file.exists(paste0(fragOut, ".tbi"))) {
+  ok <- tryCatch({ Rsamtools::indexTabix(fragOut, format = "bed"); TRUE },
+                 error = function(e) FALSE)
+  if (!ok) {
+    local_frag <- file.path(outDir, basename(fragOut))
+    if (!file.exists(local_frag)) file.copy(fragOut, local_frag)
+    Rsamtools::indexTabix(local_frag, format = "bed")
+    fragOut <- local_frag
+  }
 }
 cat(sprintf("   %s\n", fragOut))
 
@@ -158,14 +164,14 @@ setwd(workDir)
 on.exit(setwd(oldwd), add = TRUE)
 
 ArrowFiles <- createArrowFiles(
-  inputFiles      = file.path(oldwd, fragOut),
+  inputFiles      = fragOut,
   sampleNames     = "pbmc",
   geneAnnotation  = geneAnnotation,
   genomeAnnotation= genomeAnnotation,
   minTSS          = 0,
-  minFrags        = 100,
+  minFrags        = minFrags,
   filterTSS       = 0,
-  filterFrags     = 100,
+  filterFrags     = minFrags,
   offsetPlus      = 0,   # disable Tn5 shift to match GATAC fragment convention
   offsetMinus     = 0,
   addTileMat      = FALSE,
@@ -188,7 +194,7 @@ cat(sprintf("   %d cells passed ArchR QC\n", nCells(proj)))
 # 5. Run addGeneScoreMatrix (the oracle) and save the regulatory regions
 # ---------------------------------------------------------------------------
 cat("5. Computing ArchR gene scores...\n")
-geneRegionsRds <- file.path(oldwd, outDir, "gene_regions.rds")
+geneRegionsRds <- file.path(outDir, "gene_regions.rds")
 # Time only the addGeneScoreMatrix compute (tiling + scoring), so the number is
 # comparable to GATAC's make_gene_score_matrix call (Arrow/parquet creation is
 # excluded on both sides).
@@ -222,7 +228,7 @@ rd  <- as.data.frame(rowData(se))
 cells <- colnames(se)
 cat(sprintf("   matrix: %d genes x %d cells, nnz=%d\n", nrow(mat), ncol(mat), length(mat@x)))
 
-setwd(oldwd)  # write outputs relative to the workspace root
+setwd(oldwd)
 
 # ---------------------------------------------------------------------------
 # 6. Export everything for the Python harness
@@ -273,11 +279,13 @@ paramsDF <- data.frame(
   param = c("tileSize", "geneModel", "extendUpstreamMin", "extendUpstreamMax",
             "extendDownstreamMin", "extendDownstreamMax", "geneUpstream",
             "geneDownstream", "useGeneBoundaries", "useTSS", "ceiling",
-            "geneScaleFactor", "scaleTo", "excludeChr", "offsetPlus", "offsetMinus"),
+            "geneScaleFactor", "scaleTo", "excludeChr", "offsetPlus", "offsetMinus",
+            "fragments", "minFrags"),
   value = c(tileSize, geneModel, extendUpstream[1], extendUpstream[2],
             extendDownstream[1], extendDownstream[2], geneUpstream,
             geneDownstream, useGeneBoundaries, useTSS, ceiling,
-            geneScaleFactor, scaleTo, paste(excludeChr, collapse = ","), 0, 0),
+            geneScaleFactor, scaleTo, paste(excludeChr, collapse = ","), 0, 0,
+            basename(fragRaw), minFrags),
   stringsAsFactors = FALSE
 )
 data.table::fwrite(paramsDF, file.path(outDir, "params.csv"))

@@ -16,6 +16,9 @@ import snapatac2 as snap
 
 import gatac as ga
 
+from _timing import N_CPUS, cold_warm
+from _paths import data_path
+
 SELECTED_CELL_TYPES = ['CD4 Memory', 'CD14 Mono', 'NK']
 SUMMIT_KEY = ["chrom", "start", "end", "peak"]
 SUMMIT_VALUES = ["score", "signal_value", "p_value", "q_value"]
@@ -49,30 +52,32 @@ def test_peak_calling(run_gatac_only=False):
 
     # GATAC peak calling, first: run after SnapATAC2's MACS3 in the same
     # process, its first group took ~5x longer (71 s instead of 14 s)
-    parquet_path = "data/atac_pbmc_5k_filtered.parquet"
-    start_gatac = time.time()
-    ga.peak.call(
-        data,
-        groupby='cell_type',
-        parquet_path=parquet_path,
-        genome='hg38',
-        key_added='gmacs',
-        verbose=False,
-    )
-    gatac_merged = ga.peak.merge(data.uns['gmacs'], chrom_sizes='hg38')
+    parquet_path = data_path("atac_pbmc_5k_filtered.parquet")
+
+    def run_gatac():
+        ga.peak.call(
+            data,
+            groupby='cell_type',
+            parquet_path=parquet_path,
+            genome='hg38',
+            key_added='gmacs',
+            verbose=False,
+        )
+        return ga.peak.merge(data.uns['gmacs'], chrom_sizes='hg38')
+
+    gatac_merged, gatac_cold, gatac_time = cold_warm(run_gatac)
     gatac_df = gatac_merged[['chrom', 'start', 'end']].copy()
-    gatac_time = time.time() - start_gatac
 
     # Save GATAC peaks to BED file for later use
-    gatac_df.to_csv("data/gatac_peaks.bed", sep='\t', header=False, index=False)
-    print(f"Saved {len(gatac_df):,} GATAC peaks to data/gatac_peaks.bed")
+    gatac_df.to_csv(data_path("gatac_peaks.bed"), sep='\t', header=False, index=False)
+    print(f"Saved {len(gatac_df):,} GATAC peaks to {data_path('gatac_peaks.bed')}")
 
-    results = [f"GATAC:\t{gatac_time:.2f}s"]
+    results = [f"GATAC:\t{gatac_time:.2f}s", f"GATAC cold start:\t{gatac_cold:.2f}s"]
     if run_gatac_only:
         results += [f"Peaks called:\t{len(gatac_df):,}", "(SnapATAC2 comparison skipped)"]
     else:
         start_snap = time.time()
-        snap.tl.macs3(data, groupby='cell_type')
+        snap.tl.macs3(data, groupby='cell_type', n_jobs=N_CPUS)
         snap_merged = snap.tl.merge_peaks(data.uns['macs3'], snap.genome.hg38).to_pandas()
         snap_time = time.time() - start_snap
         coords = snap_merged['Peaks'].str.extract(r'^(.+):(\d+)-(\d+)$')
@@ -81,6 +86,7 @@ def test_peak_calling(run_gatac_only=False):
 
         results.insert(0, f"SnapATAC2:\t{snap_time:.2f}s")
         results.append(f"Speedup:\t{snap_time / gatac_time:.1f}x")
+        results.append(f"Speedup (cold start):\t{snap_time / gatac_cold:.1f}x")
         per_group = {}
         for group in SELECTED_CELL_TYPES:
             only_gatac, only_snap, differ = _summit_differences(data.uns['gmacs'][group], data.uns['macs3'][group])

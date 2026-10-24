@@ -12,24 +12,27 @@ from scipy import stats
 import snapatac2 as snap
 import gatac as ga
 
+from _timing import cold_warm
+from _paths import data_path
+
 
 # ============================================================================
 # Configuration
 # ============================================================================
-PARQUET_FILE = "data/atac_pbmc_5k_filtered.parquet"
-SNAP_H5AD = "data/pbmc.h5ad"
+PARQUET_FILE = data_path("atac_pbmc_5k_filtered.parquet")
+SNAP_H5AD = data_path("pbmc.h5ad")
 
 # Use SnapATAC2's built-in annotation for fair comparison
 GTF_FILE = str(snap.genome.hg38.annotation)
 
-# Timeout for GATAC (20 seconds)
-GATAC_TIMEOUT = 30
+# Timeout for GATAC's two calls (see _timing.cold_warm)
+GATAC_TIMEOUT = 60
 
 class GATACTimeoutError(Exception):
     pass
 
 def timeout_handler(signum, frame):
-    raise GATACTimeoutError(f"GATAC gene matrix took longer than {GATAC_TIMEOUT}s!")
+    raise GATACTimeoutError(f"GATAC gene matrix (two calls) took longer than {GATAC_TIMEOUT}s!")
 
 def test_gene_matrix(run_gatac_only=False):
     """Test GATAC gene matrix against SnapATAC2.
@@ -58,16 +61,13 @@ def test_gene_matrix(run_gatac_only=False):
 
     # In memory, as SnapATAC2's matrix: no output_path, no file written
     try:
-        start_gatac = time.time()
-        gatac_gene = ga.pp.make_gene_matrix(
+        gatac_gene, gatac_cold, gatac_time = cold_warm(lambda: ga.pp.make_gene_matrix(
             PARQUET_FILE,
             gene_anno=GTF_FILE,
             upstream=2000,
             downstream=0,
             include_gene_body=True,
-        )
-        end_gatac = time.time()
-        gatac_time = end_gatac - start_gatac
+        ))
     finally:
         # Disable the alarm
         signal.alarm(0)
@@ -106,6 +106,7 @@ def test_gene_matrix(run_gatac_only=False):
         results = [
             f"SnapATAC2:\t{snap_time:.2f}s",
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             f"Common cells:\t{len(common_cells)}",
             f"Common genes:\t{len(common_genes)}",
             f"GATAC genes total:\t{n_gatac_genes}",
@@ -124,6 +125,7 @@ def test_gene_matrix(run_gatac_only=False):
         # GATAC-only results
         results = [
             f"GATAC:\t{gatac_time:.2f}s",
+            f"GATAC cold start:\t{gatac_cold:.2f}s",
             f"GATAC genes total:\t{gatac_gene.shape[1]}",
             "(SnapATAC2 comparison skipped)"
         ]

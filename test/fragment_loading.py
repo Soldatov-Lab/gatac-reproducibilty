@@ -12,26 +12,28 @@ import time
 import snapatac2 as snap
 import gatac as ga
 
+from _paths import data_path
+from _timing import N_CPUS, cold_warm
+
 
 def test_fragment_loading(run_gatac_only=False):
     # Get the same fragment file used by both
     fragment_file = snap.datasets.pbmc5k()
 
     # GATAC processing
-    t0 = time.perf_counter()
-    parquet = ga.io.make_parquet(
-        fragment_file,
-        output_path="data/atac_pbmc_5k.parquet"
-    )
-    convert_time = time.perf_counter() - t0
+    def run_gatac():
+        t0 = time.perf_counter()
+        parquet = ga.io.make_parquet(fragment_file, output_path=data_path("atac_pbmc_5k.parquet"))
+        convert_time = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        filtered = ga.pp.filter_fragments(
+            parquet,
+            min_fragments_per_cell=200,
+            chrom_sizes="hg38"
+        )
+        return filtered, convert_time, time.perf_counter() - t0
 
-    t0 = time.perf_counter()
-    filtered = ga.pp.filter_fragments(
-        parquet,
-        min_fragments_per_cell=200,
-        chrom_sizes="hg38"
-    )
-    filter_time = time.perf_counter() - t0
+    (filtered, convert_time, filter_time), gatac_cold, _ = cold_warm(run_gatac)
     gatac_time = convert_time + filter_time
 
     # Barcodes are ids in the file; its barcode table lists the cells kept
@@ -44,9 +46,10 @@ def test_fragment_loading(run_gatac_only=False):
         data = snap.pp.import_fragments(
             fragment_file,
             chrom_sizes=snap.genome.hg38,
-            file="data/pbmc.h5ad",
+            file=data_path("pbmc.h5ad"),
             sorted_by_barcode=False,
-            min_num_fragments=200
+            min_num_fragments=200,
+            n_jobs=N_CPUS,
         )
         snap_cells = data.n_obs
         snap_time = time.perf_counter() - t0
@@ -56,6 +59,7 @@ def test_fragment_loading(run_gatac_only=False):
         f"GATAC:\t{gatac_time:.2f}s",
         f"  make_parquet:\t{convert_time:.2f}s",
         f"  filter_fragments:\t{filter_time:.2f}s",
+        f"GATAC cold start:\t{gatac_cold:.2f}s",
         f"GATAC cells:\t{gatac_cells:,}",
     ]
     if not run_gatac_only:

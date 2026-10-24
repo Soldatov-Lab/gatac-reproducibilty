@@ -17,6 +17,9 @@ import anndata as ad
 import snapatac2 as snap
 import gatac as ga
 
+from _timing import N_CPUS, cold_warm
+from _paths import data_path
+
 
 def test_feature_selection(run_gatac_only=False):
     """Test GATAC feature selection against SnapATAC2.
@@ -26,7 +29,7 @@ def test_feature_selection(run_gatac_only=False):
     """
     # Load the SnapATAC2 tile matrix (source of truth)
     print("Loading SnapATAC2 tile matrix...")
-    snap_tile = snap.read("data/pbmc.h5ad")
+    snap_tile = snap.read(data_path("pbmc.h5ad"))
 
     # Check if tile matrix exists, if not add it
     if snap_tile.X is None or snap_tile.shape[1] == 0:
@@ -70,7 +73,8 @@ def test_feature_selection(run_gatac_only=False):
             n_features=n_features,
             filter_lower_quantile=filter_lower_quantile,
             filter_upper_quantile=filter_upper_quantile,
-            inplace=True
+            inplace=True,
+            n_jobs=N_CPUS,
         )
         end_snap = time.time()
         snap_time = end_snap - start_snap
@@ -80,16 +84,13 @@ def test_feature_selection(run_gatac_only=False):
 
     # GATAC feature selection
     print("Running GATAC feature selection...")
-    start_gatac = time.time()
-    ga.pp.select_features(
+    _, gatac_cold, gatac_time = cold_warm(lambda: ga.pp.select_features(
         gatac_tile,
         n_features=n_features,
         filter_lower_quantile=filter_lower_quantile,
         filter_upper_quantile=filter_upper_quantile,
         inplace=True
-    )
-    end_gatac = time.time()
-    gatac_time = end_gatac - start_gatac
+    ))
 
     # GATAC results
     gatac_selected = gatac_tile.var['selected'].values
@@ -174,6 +175,7 @@ REMAINING DIFFERENCE ({len(snap_only)} features): Tie-breaking at boundary.
             f"  Selected features: {snap_n_selected:,}",
             f"GATAC:",
             f"  Time: {gatac_time:.2f}s",
+            f"  Cold start: {gatac_cold:.2f}s",
             f"  Selected features: {gatac_n_selected:,}",
             f"",
             f"Comparison:",
@@ -184,6 +186,7 @@ REMAINING DIFFERENCE ({len(snap_only)} features): Tie-breaking at boundary.
             f"  GATAC-only: {len(gatac_only):,}",
             f"  Feature overlap: {overlap_ratio:.1%}",
             f"  Speedup: {snap_time/gatac_time:.2f}x",
+            f"  Speedup (cold start): {snap_time/gatac_cold:.2f}x",
             f"",
             f"Notes:",
             f"  Remaining difference ({len(snap_only)}) is tie-breaking at boundary count",
@@ -209,6 +212,7 @@ REMAINING DIFFERENCE ({len(snap_only)} features): Tie-breaking at boundary.
             f"",
             f"GATAC:",
             f"  Time: {gatac_time:.2f}s",
+            f"  Cold start: {gatac_cold:.2f}s",
             f"  Selected features: {gatac_n_selected:,}",
             f"",
             f"(SnapATAC2 comparison skipped)"

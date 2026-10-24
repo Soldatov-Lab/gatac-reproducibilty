@@ -35,6 +35,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "GATAC"))
 import gatac as ga
 
+from _paths import data_path
+from _timing import N_CPUS, cold_warm
+
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
@@ -42,8 +45,8 @@ logger = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 
-R_OUTPUT_DIR = Path(__file__).parent.parent / "data" / "chromvar_vignette_output"
-GENOME_PATH = Path(__file__).parent.parent / "data" / "hg19.fa.gz"
+R_OUTPUT_DIR = Path(data_path("chromvar_vignette_output"))
+GENOME_PATH = Path(data_path("hg19.fa.gz"))
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -367,6 +370,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
             capture_output=True,
             text=True,
             cwd=str(r_script.parent.parent),
+            env=dict(os.environ, NTHREADS=str(N_CPUS), OUTDIR=str(R_OUTPUT_DIR)),
         )
         if result.returncode != 0:
             raise RuntimeError(f"R script failed:\n{result.stderr}")
@@ -401,9 +405,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
     adata.uns["motif_name"] = motif_names
     adata.varm["bg_peaks"] = r_bg
 
-    t0 = time.perf_counter()
-    ga.motif.compute_deviations(adata)
-    gatac_time = time.perf_counter() - t0
+    _, gatac_cold, gatac_time = cold_warm(lambda: ga.motif.compute_deviations(adata))
 
     overall_corr, per_motif_corr, n_common_cells, n_common_motifs = (
         compare_deviation_scores(r_scores, adata)
@@ -422,6 +424,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
 
     results += [
         f"GATAC:\t{gatac_time:.2f}s",
+        f"GATAC cold start:\t{gatac_cold:.2f}s",
         "",
         f"Correlation (deviations):    {overall_corr:.6f}",
         f"Max |z difference|:          {max_abs_diff(r_scores, adata):.4g}",
@@ -430,6 +433,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
     if not run_gatac_only:
         speedup = r_dev_time / gatac_time
         results.append(f"Speedup: {speedup:.1f}x")
+        results.append(f"Speedup (cold start): {r_dev_time / gatac_cold:.1f}x")
 
     log_path = os.path.join(os.path.dirname(__file__), "chromvar_vignette.log")
     with open(log_path, "w", encoding="utf-8") as f:

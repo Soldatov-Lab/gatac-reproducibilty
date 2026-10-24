@@ -3,9 +3,9 @@ LSI reproducibility test: GATAC (GPU) vs ArchR.
 
 ArchR is the correctness *oracle*. This harness:
 
-  1. Builds a binarized tile matrix from the fragment parquet already vendored
-     for the gene-score test, using GATAC's own ``pp.make_tile_matrix``, and
-     caches it.
+  1. Builds a binarized tile matrix from the PBMC 5k fragments the
+     fragment-loading test writes (14,225 cells), using GATAC's own
+     ``pp.make_tile_matrix``, and caches it.
 
   2. Hands that exact matrix to ArchR by running ``test/lsi_R.R``, which calls
      ``ArchR:::.computeLSI`` for all three ``LSIMethod`` variants and reproduces
@@ -54,19 +54,20 @@ import time
 import numpy as np
 import pandas as pd
 
+from _paths import data_path
+from _timing import cold_warm
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-OUTDIR = os.path.join(REPO, "data", "lsi_output")
-FRAGMENTS = os.path.join(REPO, "data", "gene_score_output",
-                         "fragments_archr.parquet")
-TILE_H5AD = os.path.join(OUTDIR, "tile_matrix.h5ad")
+OUTDIR = data_path("lsi_output")
+FRAGMENTS = data_path("atac_pbmc_5k_filtered.parquet")
+TILE_H5AD = os.path.join(OUTDIR, "pbmc5k_tile_matrix.h5ad")
 
 N_COMPS = 30
 N_VAR_FEATURES = 2000
 N_CLUSTERS = 6
 SCALE_TO = 1e4
 TILE_SIZE = 5000
-TIMING_REPEATS = 3
 
 # G0: measured 1.0000 on every component and 2e-7 on the singular values, so
 # these leave a wide margin while still failing on a real regression.
@@ -80,7 +81,7 @@ FEATURE_JACCARD_MIN = 1.0
 # Fixture
 # ---------------------------------------------------------------------------
 def build_tile_matrix(regenerate=False):
-    """Binarized tile matrix from the vendored fragments, via GATAC."""
+    """Binarized tile matrix from the PBMC 5k fragments, via GATAC."""
     import anndata as ad
 
     if os.path.exists(TILE_H5AD) and not regenerate:
@@ -91,15 +92,15 @@ def build_tile_matrix(regenerate=False):
     os.makedirs(OUTDIR, exist_ok=True)
     if not os.path.exists(FRAGMENTS):
         raise FileNotFoundError(
-            f"{FRAGMENTS} not found. It is produced by the gene-score test; "
-            "run test/gene_score.py first."
+            f"{FRAGMENTS} not found. It is produced by the fragment-loading "
+            "test; run test/fragment_loading.py first."
         )
     try:
         ga.io.FragmentFile(FRAGMENTS)
     except ValueError:
         raise ValueError(
             f"{FRAGMENTS} predates the current GATAC fragment format; "
-            "run test/gene_score.py again to convert it."
+            "run test/fragment_loading.py again to convert it."
         ) from None
     adata = ga.pp.make_tile_matrix(
         FRAGMENTS, chrom_sizes="hg38", tile_size=TILE_SIZE,
@@ -150,9 +151,14 @@ def run_oracle(mode):
 
 
 def ensure_oracle(X, clusters, regenerate=False):
-    """Build both oracle outputs if missing."""
+    """Build both oracle outputs if missing, or if built from another matrix."""
     needed = [f"archr_lsi_{m}.csv" for m in (1, 2, 3)] + ["archr_varfeat.csv", "archr_varfeat_time.csv"]
-    if regenerate or not all(
+    shape_csv = os.path.join(OUTDIR, "shape.csv")
+    same_matrix = os.path.exists(shape_csv) and (
+        pd.read_csv(shape_csv)[["n_cell", "n_feat", "nnz"]].iloc[0].tolist()
+        == [X.shape[0], X.shape[1], X.nnz]
+    )
+    if regenerate or not same_matrix or not all(
         os.path.exists(os.path.join(OUTDIR, f)) for f in needed
     ):
         export_for_oracle(X, clusters)
@@ -196,18 +202,17 @@ def compare(X, clusters, results):
         t_ref = float(np.loadtxt(os.path.join(OUTDIR, f"archr_time_{m}.csv"),
                                  delimiter=",", skiprows=1))
 
-        # Best of TIMING_REPEATS: the first call in a process pays one-off
-        # CUDA JIT compilation, and this GPU is usually shared, so a single
-        # sample understates the steady-state cost by several-fold.
-        dt = float("inf")
-        for _ in range(TIMING_REPEATS):
+        # As _timing.cold_warm, timing only ga.dr.lsi
+        dts = []
+        for _ in range(2):
             a = ad.AnnData(X.copy())
             a.var["selected"] = True
             a.obs["n_unique"] = np.diff(X.tocsr().indptr).astype(float)
             t0 = time.perf_counter()
             ga.dr.lsi(a, N_COMPS, method=m, outlier_quantiles=None,
                       depth_cor_cutoff=None)
-            dt = min(dt, time.perf_counter() - t0)
+            dts.append(time.perf_counter() - t0)
+        dt_cold, dt = dts
 
         r = _percomp_corr(a.obsm["X_lsi"], e_ref)
         rel = np.abs(a.uns["lsi"]["singular_values"] - s_ref) / s_ref
@@ -219,7 +224,8 @@ def compare(X, clusters, results):
             f"  method {m}: per-component |r| min={r.min():.5f} "
             f"(<{PERCOMP_CORR_MIN}: {(r < PERCOMP_CORR_MIN).sum()}/{len(r)}) | "
             f"max rel sv err={rel.max():.2e} | "
-            f"GATAC {dt:.2f}s vs ArchR {t_ref:.2f}s = x{t_ref / dt:.1f}"
+            f"GATAC {dt:.2f}s vs ArchR {t_ref:.2f}s = x{t_ref / dt:.1f} "
+            f"(cold start {dt_cold:.2f}s = x{t_ref / dt_cold:.1f})"
         )
 
     results.append("")
@@ -230,12 +236,9 @@ def compare(X, clusters, results):
                          delimiter=",", skiprows=1)
     t_ref = float(np.loadtxt(os.path.join(OUTDIR, "archr_varfeat_time.csv"),
                              delimiter=",", skiprows=1))
-    dt = float("inf")
-    for _ in range(TIMING_REPEATS):
-        t0 = time.perf_counter()
-        sel, var = cluster_var_features(X, clusters, len(ref_idx),
-                                        scale_to=SCALE_TO, binarize=True)
-        dt = min(dt, time.perf_counter() - t0)
+    (sel, var), dt_cold, dt = cold_warm(
+        lambda: cluster_var_features(X, clusters, len(ref_idx),
+                                     scale_to=SCALE_TO, binarize=True))
     metrics["varfeat_gatac_s"] = dt
     metrics["varfeat_archr_s"] = t_ref
     jac = len(np.intersect1d(sel, ref_idx)) / len(np.union1d(sel, ref_idx))
@@ -245,7 +248,8 @@ def compare(X, clusters, results):
     results.append(
         f"  feature Jaccard={jac:.6f} (identical sets: "
         f"{np.array_equal(sel, ref_idx)}) | variance max rel diff={var_err:.2e} "
-        f"| GATAC {dt:.2f}s vs ArchR {t_ref:.2f}s = x{t_ref / dt:.1f}"
+        f"| GATAC {dt:.2f}s vs ArchR {t_ref:.2f}s = x{t_ref / dt:.1f} "
+        f"(cold start {dt_cold:.2f}s = x{t_ref / dt_cold:.1f})"
     )
 
     speedups = [metrics[f"archr_s_{m}"] / metrics[f"gatac_s_{m}"] for m in (1, 2, 3)]

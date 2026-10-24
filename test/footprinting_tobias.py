@@ -36,18 +36,19 @@ READ_LEN = 50
 def read_fragments(path, chroms, barcodes):
     """chrom, start, end of the fragments of ``barcodes`` on ``chroms`` in a GATAC
     fragment parquet. This env has no GATAC: the file stores chromosome and barcode
-    ids, decoded with its own tables (``gatac.chroms`` footer, ``bc_name`` column)."""
+    ids, decoded with its own tables (``gatac.chroms`` footer, ``bc_name`` column),
+    and fragment lengths rather than ends."""
     pf = pq.ParquetFile(path)
     chrom_names = json.loads(pf.metadata.metadata[b"gatac.chroms"])
     bc_names = pq.read_table(path, columns=["bc_name"]).column("bc_name").drop_null().to_pylist()
     bc_id = {b: i for i, b in enumerate(bc_names)}
     keep = set(chroms)
-    t = pq.read_table(path, columns=["chrom_id", "start", "end"], filters=[
+    t = pq.read_table(path, columns=["chrom_id", "start", "length"], filters=[
         ("chrom_id", "in", [i for i, c in enumerate(chrom_names) if c in keep]),
         ("barcode_id", "in", [bc_id[b] for b in barcodes if b in bc_id]),
     ])
     chrom = pc.take(pa.array(chrom_names, pa.string()), t["chrom_id"])
-    return pa.table({"chrom": chrom, "start": t["start"], "end": t["end"]})
+    return pa.table({"chrom": chrom, "start": t["start"], "end": pc.add(t["start"], t["length"])})
 
 
 def cmd_bam(a):

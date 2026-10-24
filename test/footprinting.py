@@ -44,16 +44,18 @@ import pandas as pd
 import scipy.stats
 
 import gatac as ga
+
+from _paths import data_path
+from _timing import N_CPUS, cold_warm
 fpmod = importlib.import_module("gatac.tobias.footprint")     # the module, not ga.tobias.footprint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DATA = os.path.join(ROOT, "data")
-PARQUET = os.path.join(DATA, "atac_pbmc_5k_filtered.parquet")
-H5AD = os.path.join(DATA, "pbmc_peak_matrix.h5ad")
-FASTA = os.path.join(DATA, "GRCh38.p13.genome.fa")
-MEME = os.path.join(DATA, "cisBP_human.meme")
-CACHE = os.path.join(DATA, "footprinting_tobias")
+PARQUET = data_path("atac_pbmc_5k_filtered.parquet")
+H5AD = data_path("pbmc_peak_matrix.h5ad")
+FASTA = data_path("GRCh38.p13.genome.fa")
+MEME = data_path("cisBP_human.meme")
+CACHE = data_path("footprinting_tobias")
 CHROMS = ["chr19"]
 GROUPS = {"CD14 Mono": "mono", "CD4 Memory": "cd4", "NK": "nk"}
 PIXI = shutil.which("pixi") or "pixi"
@@ -64,12 +66,9 @@ def _tobias(*args):
                     os.path.join(HERE, "footprinting_tobias.py"), *args], check=True, cwd=ROOT)
 
 
-def _run_tobias(adata, peaks_bed, layouts, rerun):
+def _run_tobias(adata, peaks_bed, layouts):
     """TOBIAS outputs (cached); returns the TOBIAS wall times."""
     timings_f = os.path.join(CACHE, "timings.json")
-    if rerun and os.path.isdir(CACHE):
-        shutil.rmtree(CACHE)
-    os.makedirs(CACHE, exist_ok=True)
     groups = list(GROUPS.values())
     timings = json.load(open(timings_f)) if os.path.exists(timings_f) else {}
     if "run" not in timings:
@@ -78,16 +77,17 @@ def _run_tobias(adata, peaks_bed, layouts, rerun):
             with open(bc, "w") as f:
                 f.write("\n".join(adata.obs_names[adata.obs["group"] == g]) + "\n")
             _tobias("bam", PARQUET, bc, os.path.join(CACHE, f"{g}.bam"), "--chroms", ",".join(CHROMS),
-                    "--fasta", FASTA, "--cores", "6")
+                    "--fasta", FASTA, "--cores", str(N_CPUS))
         t0 = time.perf_counter()
         _tobias("run", CACHE, "--groups", ",".join(groups), "--peaks", peaks_bed, "--fasta", FASTA,
-                "--motifs", MEME, "--cores", "6")
+                "--motifs", MEME, "--cores", str(N_CPUS))
         timings["run"] = time.perf_counter() - t0
+        timings["cores"] = N_CPUS
         json.dump(timings, open(timings_f, "w"))
     if "control" not in timings:
         t0 = time.perf_counter()
         _tobias("run", os.path.join(CACHE, "control"), "--bamdir", CACHE, "--perturb", "--groups", ",".join(groups),
-                "--peaks", peaks_bed, "--fasta", FASTA, "--motifs", MEME, "--cores", "6")
+                "--peaks", peaks_bed, "--fasta", FASTA, "--motifs", MEME, "--cores", str(N_CPUS))
         timings["control"] = time.perf_counter() - t0
         json.dump(timings, open(timings_f, "w"))
     # inputs for the stage-isolated checks (cheap; rebuilt when the layouts change)
@@ -95,7 +95,7 @@ def _run_tobias(adata, peaks_bed, layouts, rerun):
     np.savez(os.path.join(CACHE, "fp_regions.npz"), **layouts["footprint"].intervals)
     for g in groups:
         _tobias("bias64", CACHE, g, os.path.join(CACHE, "out_regions.npz"),
-                os.path.join(CACHE, f"{g}_bias64.npz"), "--fasta", FASTA, "--cores", "6")
+                os.path.join(CACHE, f"{g}_bias64.npz"), "--fasta", FASTA, "--cores", str(N_CPUS))
     specs = []
     for g in groups:
         for tag, d in (("", CACHE), ("control_", os.path.join(CACHE, "control"))):
@@ -181,20 +181,26 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
     groups = list(GROUPS.values())
     peaks = pd.Series(adata.var_names.astype(str)).str.extract(r"^(?P<chrom>[^:]+):(?P<start>\d+)-(?P<end>\d+)$")
     peaks = peaks[peaks["chrom"].isin(CHROMS)].astype({"start": np.int64, "end": np.int64})
+    # wipe before peaks.bed goes in: TOBIAS reads it from the cache
+    if rerun_tobias and not run_gatac_only and os.path.isdir(CACHE):
+        shutil.rmtree(CACHE)
     os.makedirs(CACHE, exist_ok=True)
     peaks_bed = os.path.join(CACHE, "peaks.bed")
     peaks.to_csv(peaks_bed, sep="\t", header=False, index=False)
 
     # ---- GATAC ----
     fpmod._fai(FASTA)                                   # build the .fai outside the timing
-    t0 = time.perf_counter()
-    tracks = ga.tobias.footprint(adata, "group", PARQUET, FASTA, groups=groups, peaks=peaks,
-                             chromosomes=CHROMS, verbose=False)
-    t_fp = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    sites = ga.tobias.bindetect_sites(tracks, MEME, verbose=False)     # reused for the TOBIAS-footprint run
-    res = ga.tobias.bindetect(tracks, sites=sites, verbose=False)
-    t_bd = time.perf_counter() - t0
+    def run_gatac():
+        t0 = time.perf_counter()
+        tracks = ga.tobias.footprint(adata, "group", PARQUET, FASTA, groups=groups, peaks=peaks,
+                                     chromosomes=CHROMS, verbose=False)
+        t_fp = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        sites = ga.tobias.bindetect_sites(tracks, MEME, verbose=False)     # reused for the TOBIAS-footprint run
+        res = ga.tobias.bindetect(tracks, sites=sites, verbose=False)
+        return tracks, sites, res, t_fp, time.perf_counter() - t0
+
+    (tracks, sites, res, t_fp, t_bd), gatac_cold, _ = cold_warm(run_gatac)
     gatac_time = t_fp + t_bd
 
     results = [
@@ -205,16 +211,18 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
         f"GATAC footprint:\t{t_fp:.2f}s",
         f"GATAC bindetect:\t{t_bd:.2f}s",
         f"GATAC total:\t{gatac_time:.2f}s",
+        f"GATAC cold start:\t{gatac_cold:.2f}s",
         f"Sites: {len(res.sites):,}; bound threshold {res.threshold}",
     ]
     checks = {}
 
     if not run_gatac_only:
-        timings = _run_tobias(adata, peaks_bed, tracks.layouts, rerun_tobias)
+        timings = _run_tobias(adata, peaks_bed, tracks.layouts)
         tobias_time = timings["run"]
         dump = np.load(os.path.join(CACHE, "dump.npz"))
-        results += ["", f"TOBIAS total (6 cores):\t{tobias_time:.2f}s",
-                    f"Speedup: {tobias_time / gatac_time:.1f}x", "", "--- Stage-isolated (exact) ---"]
+        results += ["", f"TOBIAS total ({timings.get('cores', 6)} cores):\t{tobias_time:.2f}s",
+                    f"Speedup: {tobias_time / gatac_time:.1f}x",
+                    f"Speedup (cold start): {tobias_time / gatac_cold:.1f}x", "", "--- Stage-isolated (exact) ---"]
 
         # 1. bias model and normalisation
         ok_model = True
