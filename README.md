@@ -12,6 +12,7 @@ GATAC `5d313ee`).
 | Fragment Loading | x3.2 | ✅ Full Match | 14,225 cells in both; GATAC `make_parquet` + `filter_fragments` 66.2s vs SnapATAC2 `import_fragments` 209.1s |
 | TSS Enrichment | x1.9 | ✅ Correlation: 1.000 | Cell count match |
 | Tile Matrix | x5.2 | ✅ Full Match | Sum=123,061,807 for both tools |
+| Gene Matrix | x5.3 | ✅ Full Match | vs `snap.pp.make_gene_matrix`: same 14,225 cells × 60,606 genes in the same order, all 52,805,125 nonzero entries identical; L40S |
 | Feature Selection | x1.7 | ⚠️ Overlap: 99.8% | 80 features differ by tie-breaking at the boundary count |
 | Peak Calling | x24.4 | ✅ Full Match | vs `snap.tl.macs3` (MACS3 3.0.4): all 234,758 summits of 3 groups identical (positions, scores, fold enrichment, p/q); merged peaks identical (119,141); L40S |
 | Peak Matrix | x4.3 | ✅ Full Match | 42,932,832 nnz in both on the 119,141 merged peaks; L40S |
@@ -59,6 +60,7 @@ format; `lsi.py` reads the fragments `gene_score.py` writes.
 pixi run python test/fragment_loading.py
 pixi run python test/tss_enrichment.py
 pixi run python test/tile_matrix.py
+pixi run python test/gene_matrix.py
 pixi run python test/feature_selection.py
 pixi run python test/peak_calling.py
 pixi run python test/make_peak_matrix.py

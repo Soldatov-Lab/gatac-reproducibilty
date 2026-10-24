@@ -7,6 +7,7 @@ import time
 import signal
 import argparse
 import numpy as np
+import scipy.sparse as sp
 from scipy import stats
 import snapatac2 as snap
 import gatac as ga
@@ -55,6 +56,7 @@ def test_gene_matrix(run_gatac_only=False):
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(GATAC_TIMEOUT)
 
+    # In memory, as SnapATAC2's matrix: no output_path, no file written
     try:
         start_gatac = time.time()
         gatac_gene = ga.pp.make_gene_matrix(
@@ -77,6 +79,8 @@ def test_gene_matrix(run_gatac_only=False):
     if not run_gatac_only:
         # Align cells to common set
         snap_gene = snap_gene.to_memory()
+        n_gatac_genes, n_snap_genes = gatac_gene.n_vars, snap_gene.n_vars
+        n_gatac_cells, n_snap_cells = gatac_gene.n_obs, snap_gene.n_obs
         common_cells = list(set(snap_gene.obs_names) & set(gatac_gene.obs_names))
         snap_gene = snap_gene[common_cells]
         gatac_gene = gatac_gene[common_cells]
@@ -93,22 +97,29 @@ def test_gene_matrix(run_gatac_only=False):
         # Correlation
         correlation = stats.pearsonr(gatac_sum, snap_sum)[0] if len(snap_sum) > 1 else 0
 
+        # Entry-wise: the same count for every cell and gene
+        differing = (
+            sp.csr_matrix(gatac_gene.X, dtype=np.int64) - sp.csr_matrix(snap_gene.X, dtype=np.int64)
+        ).count_nonzero()
+
         # Results
         results = [
             f"SnapATAC2:\t{snap_time:.2f}s",
             f"GATAC:\t{gatac_time:.2f}s",
             f"Common cells:\t{len(common_cells)}",
             f"Common genes:\t{len(common_genes)}",
-            f"GATAC genes total:\t{gatac_gene.shape[1]}",
-            f"SnapATAC2 genes total:\t{snap_gene.shape[1]}",
+            f"GATAC genes total:\t{n_gatac_genes}",
+            f"SnapATAC2 genes total:\t{n_snap_genes}",
             f"GATAC sum:\t{gatac_sum.sum():.0f}",
             f"SnapATAC2 sum:\t{snap_sum.sum():.0f}",
             f"Per-cell correlation:\t{correlation:.6f}",
+            f"Differing entries:\t{differing}",
         ]
         
         # Assertions
-        assert correlation > 0.99, f"Correlation too low: {correlation:.6f}"
-        assert abs(gatac_sum.sum() - snap_sum.sum()) / (snap_sum.sum() + 1e-9) < 0.01, "Sum difference too large"
+        assert len(common_cells) == n_snap_cells == n_gatac_cells, "cells differ"
+        assert len(common_genes) == n_snap_genes == n_gatac_genes, "genes differ"
+        assert differing == 0, f"{differing} entries differ on the common genes"
     else:
         # GATAC-only results
         results = [
