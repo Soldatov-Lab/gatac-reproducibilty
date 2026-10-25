@@ -52,6 +52,11 @@ biopython = ">=1.73"
 pytest = ">=9.0.2, <10"
 gseapy = ">=1.1.3"
 
+# CuPy compiles its kernels with the headers of the pip CUDA runtime, so nodes
+# without a system CUDA (/usr/local/cuda) work too.
+[feature.gatac.activation.env]
+CUDA_PATH = "$CONDA_PREFIX/lib/python3.13/site-packages/nvidia/cuda_runtime"
+
 # AMULET feature: original tool, v1.1 release, requires older numpy/pandas.
 [feature.amulet.dependencies]
 python = ">=3.11, <3.12"
