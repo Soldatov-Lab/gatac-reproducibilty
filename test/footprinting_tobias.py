@@ -13,8 +13,9 @@ Subcommands, all driven by ``test/footprinting.py``:
 * ``dump``    bigwig values over a set of intervals, and the bias model of each
               group, as ``.npz``.
 
-``run --perturb`` is the noise control: TOBIAS with its DWM bias scores perturbed by
-uniform noise in ±1e-13, the size of floating-point summation-order differences.
+``run --perturb SEED`` is the noise control: TOBIAS with its DWM bias scores perturbed by
+uniform noise in ±1e-13, the size of floating-point summation-order differences, drawn
+with that seed.
 """
 import argparse
 import json
@@ -93,19 +94,22 @@ def cmd_bam(a):
     print(f"{n:,} read pairs -> {a.out}")
 
 
-def _tobias(args, log, perturb=False):
-    cmd = [sys.executable, os.path.abspath(__file__), "tobias-perturbed", *args] if perturb else ["TOBIAS", *args]
+def _tobias(args, log, perturb=None):
+    """TOBIAS, or with ``perturb`` (a seed) the noise control's perturbed TOBIAS."""
+    cmd = (["TOBIAS", *args] if perturb is None
+           else [sys.executable, os.path.abspath(__file__), "tobias-perturbed", str(perturb), *args])
     with open(log, "w") as f:
         subprocess.run(cmd, check=True, stdout=f, stderr=subprocess.STDOUT)
 
 
 def tobias_perturbed(args):
-    """Stock TOBIAS with DiNucleotideMatrix.score_sequence perturbed by U(-1e-13, 1e-13)."""
+    """Stock TOBIAS with DiNucleotideMatrix.score_sequence perturbed by U(-1e-13, 1e-13); ``args[0]`` is the seed."""
     import tobias.utils.sequences as seqmod
     from tobias.TOBIAS import main
 
     orig = seqmod.DiNucleotideMatrix.score_sequence
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(int(args[0]))
+    args = args[1:]
 
     def noisy(self, sequence):
         s = orig(self, sequence)
@@ -202,7 +206,8 @@ if __name__ == "__main__":
     r.add_argument("--fasta", required=True); r.add_argument("--motifs", required=True)
     r.add_argument("--cores", type=int, default=6)
     r.add_argument("--bamdir", default=None, help="directory of the BAMs (default: outdir)")
-    r.add_argument("--perturb", action="store_true", help="noise control: perturb the DWM bias scores")
+    r.add_argument("--perturb", type=int, nargs="?", const=0, default=None, metavar="SEED",
+                   help="noise control: perturb the DWM bias scores, with this seed (default 0)")
     x = sp.add_parser("bias64")
     x.add_argument("outdir"); x.add_argument("group"); x.add_argument("regions"); x.add_argument("out")
     x.add_argument("--fasta", required=True); x.add_argument("--cores", type=int, default=6)

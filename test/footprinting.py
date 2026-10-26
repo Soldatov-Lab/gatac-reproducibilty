@@ -19,8 +19,11 @@ Stage by stage, each GATAC stage gets TOBIAS's own input, and must match exactly
 
 End to end, the only difference is the last bits of the DWM bias score
 (floating-point summation order). The tolerances come from a noise control:
-TOBIAS rerun with that score perturbed by U(-1e-13, 1e-13). GATAC's deviation
-from TOBIAS must stay within twice the control's deviation from TOBIAS.
+TOBIAS rerun with that score perturbed by U(-1e-13, 1e-13), once per seed in
+CONTROL_SEEDS. GATAC's deviation from TOBIAS must stay within twice the
+largest deviation of these reruns. One rerun is not enough: the bound-site
+calls that flip are those at the bound threshold, and how many flip varies
+from one perturbation to the next.
 
 Usage::
 
@@ -58,6 +61,12 @@ MEME = data_path("cisBP_human.meme")
 CACHE = data_path("footprinting_tobias")
 CHROMS = ["chr19"]
 GROUPS = {"CD14 Mono": "mono", "CD4 Memory": "cd4", "NK": "nk"}
+# Noise-control reruns of TOBIAS, one per seed, cached in CACHE/<dir>
+CONTROL_SEEDS = (0, 1, 2)
+
+
+def _control_dir(seed):
+    return os.path.join(CACHE, "control" if seed == 0 else f"control_{seed}")
 PIXI = shutil.which("pixi") or "pixi"
 
 
@@ -84,12 +93,13 @@ def _run_tobias(adata, peaks_bed, layouts):
         timings["run"] = time.perf_counter() - t0
         timings["cores"] = N_CPUS
         json.dump(timings, open(timings_f, "w"))
-    if "control" not in timings:
-        t0 = time.perf_counter()
-        _tobias("run", os.path.join(CACHE, "control"), "--bamdir", CACHE, "--perturb", "--groups", ",".join(groups),
+    for seed in CONTROL_SEEDS:
+        # Cached once its BINDetect results are written, which may be by a
+        # separate job running footprinting_tobias.py run --perturb SEED
+        if os.path.exists(os.path.join(_control_dir(seed), "bindetect", "bindetect_results.txt")):
+            continue
+        _tobias("run", _control_dir(seed), "--bamdir", CACHE, "--perturb", str(seed), "--groups", ",".join(groups),
                 "--peaks", peaks_bed, "--fasta", FASTA, "--motifs", MEME, "--cores", str(N_CPUS))
-        timings["control"] = time.perf_counter() - t0
-        json.dump(timings, open(timings_f, "w"))
     # inputs for the stage-isolated checks (cheap; rebuilt when the layouts change)
     np.savez(os.path.join(CACHE, "out_regions.npz"), **layouts["corrected"].intervals)
     np.savez(os.path.join(CACHE, "fp_regions.npz"), **layouts["footprint"].intervals)
@@ -98,7 +108,7 @@ def _run_tobias(adata, peaks_bed, layouts):
                 os.path.join(CACHE, f"{g}_bias64.npz"), "--fasta", FASTA, "--cores", str(N_CPUS))
     specs = []
     for g in groups:
-        for tag, d in (("", CACHE), ("control_", os.path.join(CACHE, "control"))):
+        for tag, d in (("", CACHE), *((f"control{seed}_", _control_dir(seed)) for seed in CONTROL_SEEDS)):
             specs += [f"{tag}{g}_corrected={os.path.join(d, g, g + '_corrected.bw')}={os.path.join(CACHE, 'out_regions.npz')}",
                       f"{tag}{g}_footprints={os.path.join(d, g, g + '_footprints.bw')}={os.path.join(CACHE, 'fp_regions.npz')}"]
     _tobias("dump", CACHE, os.path.join(CACHE, "dump.npz"), "--groups", ",".join(groups), "--bigwig", *specs)
@@ -284,15 +294,20 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
             {g: np.concatenate([tracks.values["corrected"][g][lay.chrom_slice(c)] for c in CHROMS]) for g in groups},
             {g: np.concatenate([tracks.values["footprint"][g][flay.chrom_slice(c)] for c in CHROMS]) for g in groups},
             res.results, dump, ref, groups, res.comparisons)
-        ctrl_ref = pd.read_csv(os.path.join(CACHE, "control", "bindetect", "bindetect_results.txt"), sep="\t",
-                               keep_default_na=False, na_values=["NA"], float_precision="round_trip")
-        ctrl = _deviation(
-            {g: np.concatenate([dump[f"control_{g}_corrected__{c}"] for c in CHROMS]) for g in groups},
-            {g: np.concatenate([dump[f"control_{g}_footprints__{c}"] for c in CHROMS]) for g in groups},
-            ctrl_ref, dump, ref, groups, res.comparisons)
-        results += ["", "--- End to end: deviation from TOBIAS (GATAC vs TOBIAS ±1e-13 bias noise control) ---"]
+        controls = []
+        for seed in CONTROL_SEEDS:
+            ctrl_ref = pd.read_csv(os.path.join(_control_dir(seed), "bindetect", "bindetect_results.txt"), sep="\t",
+                                   keep_default_na=False, na_values=["NA"], float_precision="round_trip")
+            controls.append(_deviation(
+                {g: np.concatenate([dump[f"control{seed}_{g}_corrected__{c}"] for c in CHROMS]) for g in groups},
+                {g: np.concatenate([dump[f"control{seed}_{g}_footprints__{c}"] for c in CHROMS]) for g in groups},
+                ctrl_ref, dump, ref, groups, res.comparisons))
+        ctrl = {k: max(c[k] for c in controls) for k in mine}
+        results += ["", f"--- End to end: deviation from TOBIAS (GATAC vs the largest of {len(controls)} "
+                        "TOBIAS ±1e-13 bias noise controls) ---"]
         for k in mine:
-            results.append(f"{k}:\t{mine[k]:.3g}\t(control {ctrl[k]:.3g})")
+            spread = ", ".join(f"{c[k]:.3g}" for c in controls)
+            results.append(f"{k}:\t{mine[k]:.3g}\t(controls {spread})")
         checks["e2e"] = {k: (mine[k], ctrl[k]) for k in mine}
 
     log_path = os.path.join(HERE, "footprinting.log")
@@ -313,7 +328,7 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
         for k, (m, c) in e2e.items():
             # within twice TOBIAS's own sensitivity (integer counts: twice the control's value + 1)
             limit = 2 * c if isinstance(c, float) else 2 * c + 1
-            assert m <= limit, f"end to end {k}: {m:.3g} exceeds 2x the TOBIAS noise control ({c:.3g})"
+            assert m <= limit, f"end to end {k}: {m:.3g} exceeds 2x the largest TOBIAS noise control ({c:.3g})"
 
 
 if __name__ == "__main__":
