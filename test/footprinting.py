@@ -117,10 +117,10 @@ def _run_tobias(adata, peaks_bed, layouts):
 
 def _exact_correction(tracks, g, gi, bias64, cuts):
     """Corrected track from GATAC's correction given TOBIAS's fp64 bias scores (float32, as in the bigwig)."""
-    fai = fpmod._fai(FASTA)
+    fa = ga.io.Fasta(FASTA)
     out = {}
     for c in CHROMS:
-        seq_d = cp.asarray(fpmod._LUT[fpmod._chrom_bytes(FASTA, fai, c)])
+        seq_d = cp.asarray(fpmod._LUT[fa.chrom(c)])
         out_reg = tracks.layouts["corrected"].intervals[c]
         override = {s: bias64[f"{c}__{s}"] for s in ("forward", "reverse")}
         tr, _ = fpmod._correct_chrom(out_reg, cuts[gi][c], seq_d, tracks.bias_models[g],
@@ -199,7 +199,7 @@ def test_footprinting(run_gatac_only=False, rerun_tobias=False):
     peaks.to_csv(peaks_bed, sep="\t", header=False, index=False)
 
     # ---- GATAC ----
-    fpmod._fai(FASTA)                                   # build the .fai outside the timing
+    ga.io.Fasta(FASTA).close()                          # build the .fai outside the timing
     def run_gatac():
         t0 = time.perf_counter()
         tracks = ga.tobias.footprint(adata, "group", PARQUET, FASTA, groups=groups, peaks=peaks,
