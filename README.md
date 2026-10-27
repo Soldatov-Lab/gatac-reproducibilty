@@ -108,6 +108,16 @@ once and are cached there:
 | `lsi` | ArchR `.computeLSI`, `.identifyVarFeatures` | `lsi_output/` | `--regenerate` |
 | `iterative_lsi` | ArchR `addIterativeLSI`, two seeds | `iterative_lsi_output/` | `--regenerate` |
 | `footprinting` | TOBIAS 0.17.5 | `footprinting_tobias/` | `--rerun-tobias` |
+| `motif_enrichment` | SnapATAC2 `motif_enrichment` | `references/motif_enrichment_snapatac2.pkl` | `--rerun-reference` |
+| `gsea_motif_enrichment` | GSEApy `prerank` | `references/gsea_gseapy.pkl` | `--rerun-reference` |
+| `chromvar_vignette` | R chromVAR vignette | `chromvar_vignette_output/` | `--rerun-reference` |
+
+The last three are keyed on their inputs: SnapATAC2's result is reused while
+the marker regions (from GATAC's peaks), the motif file and the SnapATAC2
+version are the same, GSEApy's while its ranked list, gene sets and version
+are, and R's outputs while `chromvar_vignette_R.R` is unchanged; otherwise
+the tool reruns by itself. A cached result keeps the run time measured when
+it was stored, so the speedups compare against that run.
 
 `addIterativeLSI` changes with its seed, so GATAC is judged against ArchR's own
 seed-to-seed agreement. For footprinting, each TOBIAS stage given TOBIAS's own

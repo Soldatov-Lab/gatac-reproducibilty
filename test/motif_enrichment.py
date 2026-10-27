@@ -17,13 +17,16 @@ from scipy.stats import pearsonr
 
 from _timing import cold_warm
 from _paths import data_path
+import _reference
 
 
-def test_motif_enrichment(run_gatac_only=False):
+def test_motif_enrichment(run_gatac_only=False, rerun_reference=False):
     """Test GATAC motif enrichment against SnapATAC2.
 
     Args:
         run_gatac_only: If True, run GATAC only (skip SnapATAC2) motif enrichment and comparison
+        rerun_reference: If True, rerun SnapATAC2 even when its result for these
+            markers is cached (see _reference.py)
     """
     # Load data
     print("Loading annotated PBMC 5k dataset...")
@@ -93,17 +96,10 @@ def test_motif_enrichment(run_gatac_only=False):
     from snapatac2.datasets import register_datasets
     meme_path = register_datasets().fetch('cisBP_human.meme')
 
-    # Load for SnapATAC2 (uses built-in function)
-    if not run_gatac_only:
-        snap_motifs = snap.datasets.cis_bp(unique=True)
-
-    # Load for GATAC (use read_motifs from the same file)
+    # Load for GATAC (use read_motifs from the same file); SnapATAC2 loads its
+    # built-in copy when it runs
     gatac_motifs = read_motifs(meme_path, unique=True)
-
-    if not run_gatac_only:
-        print(f"Loaded {len(snap_motifs)} SnapATAC2 motifs, {len(gatac_motifs)} GATAC motifs")
-    else:
-        print(f"Loaded {len(gatac_motifs)} GATAC motifs")
+    print(f"Loaded {len(gatac_motifs)} GATAC motifs")
 
     # Get genome FASTA path
     genome_fasta = snap.genome.hg38.fasta
@@ -114,11 +110,17 @@ def test_motif_enrichment(run_gatac_only=False):
     snap_results = None
 
     if not run_gatac_only:
-        print("\nRunning SnapATAC2 motif enrichment...")
-        start_snap = time.time()
-        snap_results = snap.tl.motif_enrichment(snap_motifs, markers, genome_fasta)
-        end_snap = time.time()
-        snap_time = end_snap - start_snap
+        def run_snap():
+            print("\nRunning SnapATAC2 motif enrichment...")
+            snap_motifs = snap.datasets.cis_bp(unique=True)
+            start_snap = time.time()
+            results = snap.tl.motif_enrichment(snap_motifs, markers, genome_fasta)
+            return results, time.time() - start_snap
+
+        inputs = _reference.key(snap.__version__, {k: list(v) for k, v in markers.items()},
+                                _reference.file_key(meme_path), str(genome_fasta))
+        (snap_results, snap_time), _ = _reference.cached(
+            "motif_enrichment_snapatac2", inputs, run_snap, rerun=rerun_reference)
 
     # Run GATAC motif enrichment
     print("\nRunning GATAC motif enrichment...")
@@ -204,6 +206,8 @@ if __name__ == '__main__':
         action="store_true",
         help="Run GATAC only, skip SnapATAC2 motif enrichment and comparison"
     )
+    parser.add_argument("--rerun-reference", action="store_true",
+                        help="Rerun SnapATAC2 even when its result is cached")
     args = parser.parse_args()
 
-    test_motif_enrichment(run_gatac_only=args.run_gatac_only)
+    test_motif_enrichment(run_gatac_only=args.run_gatac_only, rerun_reference=args.rerun_reference)

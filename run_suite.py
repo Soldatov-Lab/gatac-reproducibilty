@@ -43,6 +43,9 @@ TESTS = [
 
 # Flags that make a test rerun its cached reference tool
 RERUN_FLAGS = {
+    "motif_enrichment": ["--rerun-reference"],
+    "gsea_motif_enrichment": ["--rerun-reference"],
+    "chromvar_vignette": ["--rerun-reference"],
     "amulet_doublet": ["--rerun-amulet"],
     "gene_score": ["--regenerate"],
     "lsi": ["--regenerate"],
@@ -57,7 +60,8 @@ def main():
                         help=f"tests to run (default: all): {', '.join(TESTS)}")
     parser.add_argument("--data-dir", help="data directory (default: $GATAC_REPRO_DATA or data/)")
     parser.add_argument("--rerun-references", action="store_true",
-                        help="rerun AMULET, ArchR and TOBIAS instead of using their cached outputs")
+                        help="rerun the reference tools (SnapATAC2, GSEApy, R chromVAR, AMULET, ArchR, TOBIAS) "
+                             "instead of using their cached outputs")
     args = parser.parse_args()
     unknown = sorted(set(args.tests) - set(TESTS))
     if unknown:

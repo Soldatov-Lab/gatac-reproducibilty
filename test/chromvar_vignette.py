@@ -37,6 +37,7 @@ import gatac as ga
 
 from _paths import data_path
 from _timing import N_CPUS, cold_warm
+import _reference
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -352,16 +353,24 @@ def test_chromvar_full_pipeline():
 # ---------------------------------------------------------------------------
 
 
-def test_chromvar_deviation_speedup(run_gatac_only=False):
+def test_chromvar_deviation_speedup(run_gatac_only=False, rerun_reference=False):
     """Run R chromVAR from Python, time computeDeviations, compare to GATAC.
 
     Uses R's exact motif matches and background peaks in both tools so the
-    only difference is the deviation kernel implementation.
+    only difference is the deviation kernel implementation. R's outputs are
+    reused while the R script is unchanged, unless ``rerun_reference``.
     """
     r_script = Path(__file__).parent / "chromvar_vignette_R.R"
     r_dev_time = None
+    # Hash of the R script that wrote R_OUTPUT_DIR (its inputs ship with chromVAR)
+    script_key = R_OUTPUT_DIR / "script.sha256"
+    r_cached = (not rerun_reference and (R_OUTPUT_DIR / "timing.csv").exists() and script_key.exists()
+                and script_key.read_text() == _reference.file_key(r_script))
 
-    if not run_gatac_only:
+    if not run_gatac_only and r_cached:
+        r_dev_time = pd.read_csv(R_OUTPUT_DIR / "timing.csv")["deviation_time"].iloc[0]
+        print(f"R chromVAR: cached outputs in {R_OUTPUT_DIR} ({r_dev_time:.2f}s)")
+    elif not run_gatac_only:
         print("\n" + "=" * 70)
         print("Running R chromVAR vignette script...")
         print("=" * 70)
@@ -383,6 +392,7 @@ def test_chromvar_deviation_speedup(run_gatac_only=False):
                 "Check that the R script completed successfully."
             )
         r_dev_time = pd.read_csv(timing_path)["deviation_time"].iloc[0]
+        script_key.write_text(_reference.file_key(r_script))
     else:
         _check_r_outputs()
 
@@ -453,5 +463,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Run GATAC only, skip R script run and speedup comparison",
     )
+    parser.add_argument("--rerun-reference", action="store_true",
+                        help="Rerun the R script even when its outputs are cached")
     args = parser.parse_args()
-    test_chromvar_deviation_speedup(run_gatac_only=args.run_gatac_only)
+    test_chromvar_deviation_speedup(run_gatac_only=args.run_gatac_only,
+                                    rerun_reference=args.rerun_reference)

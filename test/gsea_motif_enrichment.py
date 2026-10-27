@@ -9,8 +9,8 @@ within tolerance.
 Results and timings are written to ``gsea_motif_enrichment.log`` next to this file.
 """
 
+import argparse
 import os
-import time
 
 import gseapy as gp
 import numpy as np
@@ -18,6 +18,7 @@ import pandas as pd
 from gatac.motif._gsea import prerank_gpu
 
 from _timing import N_CPUS, cold_warm
+import _reference
 
 
 # ---------------------------------------------------------------------------
@@ -239,11 +240,12 @@ def compare_results(
 # ---------------------------------------------------------------------------
 
 
-def test_gsea_gpu():
+def test_gsea_gpu(rerun_reference=False):
     """End-to-end comparison: GPU prerank vs GSEApy (Rust backend).
 
     Uses a large synthetic dataset (60 000 genes, 300 sets) to exercise
-    both correctness and GPU scaling.
+    both correctness and GPU scaling. GSEApy's result is cached for these
+    inputs unless ``rerun_reference`` (see _reference.py).
     """
     PERMUTATION_NUM = 1000
     SEED = 42
@@ -265,9 +267,11 @@ def test_gsea_gpu():
     log_lines.append(f"Genes: {len(ranked):,}   Gene sets: {len(gene_sets)}")
 
     # --- GSEApy ---
-    t0 = time.time()
-    gseapy_df = run_gseapy(ranked, gene_sets, permutation_num=PERMUTATION_NUM, seed=SEED)
-    gseapy_time = time.time() - t0
+    inputs = _reference.key(gp.__version__, ranked, gene_sets, PERMUTATION_NUM, SEED)
+    gseapy_df, gseapy_time = _reference.cached(
+        "gsea_gseapy", inputs,
+        lambda: run_gseapy(ranked, gene_sets, permutation_num=PERMUTATION_NUM, seed=SEED),
+        rerun=rerun_reference)
     log_lines.append(f"GSEApy time:\t{gseapy_time:.2f}s  ({len(gseapy_df)} sets)")
 
     # --- GPU ---
@@ -331,7 +335,11 @@ def test_gsea_gpu():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Test GATAC GPU preranked GSEA vs GSEApy")
+    parser.add_argument("--rerun-reference", action="store_true",
+                        help="Rerun GSEApy even when its result is cached")
+    args = parser.parse_args()
     # Clear log on fresh run
     open(LOG_PATH, "w").close()
-    test_gsea_gpu()
+    test_gsea_gpu(rerun_reference=args.rerun_reference)
     print(f"\nResults written to {LOG_PATH}")
